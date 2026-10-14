@@ -119,11 +119,11 @@ fn inline_row_highlights_both_names_and_keeps_active_selection() {
     );
     assert_eq!(
         buffer[(15, 2)].bg,
-        herdr_picker::theme::Palette::catppuccin().accent
+        herdr_picker::theme::Palette::catppuccin().selection_bg
     );
     assert_eq!(
         buffer[(15, 2)].fg,
-        herdr_picker::theme::Palette::catppuccin().panel_bg
+        herdr_picker::theme::Palette::catppuccin().blue
     );
 }
 
@@ -255,8 +255,8 @@ fn dracula_colors_fill_panel_selection_hints_and_buttons() {
     let palette = app.theme.palette();
     assert_eq!(buffer[(79, 10)].bg, palette.panel_bg);
     assert_eq!(buffer[(0, 0)].fg, palette.text);
-    assert_eq!(buffer[(0, 2)].bg, palette.accent);
-    assert_eq!(buffer[(0, 2)].fg, palette.panel_bg);
+    assert_eq!(buffer[(0, 2)].bg, palette.selection_bg);
+    assert_eq!(buffer[(0, 2)].fg, palette.text);
     assert_eq!(buffer[(1, 17)].fg, palette.overlay1);
     assert_eq!(buffer[(30, 19)].bg, palette.accent);
     assert_eq!(buffer[(33, 19)].symbol(), "O");
@@ -309,4 +309,110 @@ fn loading_panel_uses_shared_footer_with_disabled_ok() {
     assert_eq!(buffer[(38, 19)].bg, palette.surface0);
     let padding: String = (0..80).map(|x| buffer[(x, 18)].symbol()).collect();
     assert_eq!(padding, " ".repeat(80));
+}
+
+fn colored_worktree_app(mode: SearchMode, query: &str) -> App {
+    let snapshot = parse_snapshot(include_bytes!("fixtures/worktrees.json")).unwrap();
+    let mut app = App::new(snapshot, mode);
+    app.theme = herdr_picker::theme::Theme::parse("[theme]\nname = 'dracula'").unwrap();
+    app.set_query(query.into());
+    app
+}
+
+fn app_buffer(app: &mut App, width: u16) -> ratatui::buffer::Buffer {
+    let mut terminal = Terminal::new(TestBackend::new(width, 18)).unwrap();
+    terminal.draw(|frame| render(frame, app)).unwrap();
+    terminal.backend().buffer().clone()
+}
+
+#[test]
+fn dracula_hierarchy_colors_selected_root_worktree_and_tab_names() {
+    let mut app = colored_worktree_app(SearchMode::Hierarchical, "herdr-picker multimachine codex");
+    app.selected = Some(1);
+    let buffer = app_buffer(&mut app, 80);
+    assert_eq!(buffer[(3, 2)].fg, ratatui::style::Color::Rgb(189, 147, 249));
+    assert_eq!(buffer[(5, 3)].fg, ratatui::style::Color::Rgb(80, 250, 123));
+    assert_eq!(buffer[(7, 4)].fg, ratatui::style::Color::Rgb(139, 233, 253));
+    assert_eq!(buffer[(5, 3)].bg, app.theme.palette().selection_bg);
+    assert_eq!(buffer[(3, 2)].bg, app.theme.palette().panel_bg);
+    assert_eq!(buffer[(0, 3)].symbol(), "›");
+    assert!(
+        buffer[(5, 3)]
+            .modifier
+            .contains(ratatui::style::Modifier::BOLD | ratatui::style::Modifier::UNDERLINED)
+    );
+}
+
+#[test]
+fn dracula_flat_breadcrumb_keeps_each_type_color_on_selected_row() {
+    let mut app = colored_worktree_app(SearchMode::Flat, "herdr-picker multimachine codex");
+    let buffer = app_buffer(&mut app, 80);
+    assert_eq!(buffer[(3, 2)].fg, ratatui::style::Color::Rgb(189, 147, 249));
+    assert_eq!(buffer[(18, 2)].fg, ratatui::style::Color::Rgb(80, 250, 123));
+    assert_eq!(
+        buffer[(33, 2)].fg,
+        ratatui::style::Color::Rgb(139, 233, 253)
+    );
+    assert_eq!(buffer[(16, 2)].symbol(), "/");
+    assert_eq!(buffer[(16, 2)].fg, app.theme.palette().text);
+    assert_eq!(buffer[(33, 2)].bg, app.theme.palette().selection_bg);
+}
+
+#[test]
+fn dracula_inline_worktree_and_tab_have_separate_colors() {
+    let mut app = colored_worktree_app(SearchMode::Hierarchical, "just terminal");
+    let buffer = app_buffer(&mut app, 80);
+    assert_eq!(buffer[(5, 3)].symbol(), "j");
+    assert_eq!(buffer[(12, 3)].symbol(), "T");
+    assert_eq!(buffer[(5, 3)].fg, app.theme.palette().green);
+    assert_eq!(buffer[(12, 3)].fg, app.theme.palette().blue);
+    assert_eq!(buffer[(10, 3)].fg, app.theme.palette().text);
+}
+
+#[test]
+fn truncated_breadcrumb_ellipses_keep_each_type_color() {
+    let mut app = colored_worktree_app(SearchMode::Flat, "herdr-picker multimachine codex");
+    let buffer = app_buffer(&mut app, 14);
+    assert_eq!(buffer[(3, 2)].symbol(), "…");
+    assert_eq!(buffer[(8, 2)].symbol(), "…");
+    assert_eq!(buffer[(13, 2)].symbol(), "…");
+    assert_eq!(buffer[(3, 2)].fg, app.theme.palette().accent);
+    assert_eq!(buffer[(8, 2)].fg, app.theme.palette().green);
+    assert_eq!(buffer[(13, 2)].fg, app.theme.palette().blue);
+}
+
+#[test]
+fn appearance_updates_apply_custom_type_colors_without_changing_navigation() {
+    let mut app = colored_worktree_app(SearchMode::Flat, "herdr-picker multimachine codex");
+    app.theme = herdr_picker::theme::Theme::parse("[theme]\nname = 'dracula'\nauto_switch = true\nlight_name = 'one-light'\n[theme.custom]\naccent = '#123456'\ngreen = '#654321'\nblue = '#abcdef'\n[theme.custom.light]\ngreen = '#102030'").unwrap();
+    let dark = app_buffer(&mut app, 80);
+    assert_eq!(dark[(3, 2)].fg, ratatui::style::Color::Rgb(18, 52, 86));
+    assert_eq!(dark[(18, 2)].fg, ratatui::style::Color::Rgb(101, 67, 33));
+    assert_eq!(dark[(33, 2)].fg, ratatui::style::Color::Rgb(171, 205, 239));
+    let selected = app.selected;
+    let offset = app.offset;
+    app.handle(terminal_input::event::Event::ThemeModeChanged(
+        terminal_input::event::ThemeMode::Light,
+    ));
+    let light = app_buffer(&mut app, 80);
+    assert_eq!(light[(3, 2)].fg, ratatui::style::Color::Rgb(18, 52, 86));
+    assert_eq!(light[(18, 2)].fg, ratatui::style::Color::Rgb(16, 32, 48));
+    assert_eq!(light[(33, 2)].fg, ratatui::style::Color::Rgb(171, 205, 239));
+    assert_eq!(
+        light[(33, 2)].bg,
+        herdr_picker::theme::Palette::one_light().selection_bg
+    );
+    assert_eq!(app.query, "herdr-picker multimachine codex");
+    assert_eq!(app.selected, selected);
+    assert_eq!(app.offset, offset);
+}
+
+#[test]
+fn dracula_single_tab_root_colors_workspace_and_inline_tab_separately() {
+    let (app, buffer) = themed_draw(80, 20, "exact terminal");
+    assert_eq!(buffer[(3, 2)].symbol(), "E");
+    assert_eq!(buffer[(17, 2)].symbol(), "T");
+    assert_eq!(buffer[(3, 2)].fg, app.theme.palette().accent);
+    assert_eq!(buffer[(17, 2)].fg, app.theme.palette().blue);
+    assert_eq!(buffer[(15, 2)].fg, app.theme.palette().text);
 }

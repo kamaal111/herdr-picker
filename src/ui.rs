@@ -18,7 +18,7 @@ use ratatui::{
     Frame, Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Layout, Rect},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style, Stylize},
     text::{Line, Span},
     widgets::Paragraph,
 };
@@ -33,7 +33,7 @@ use crate::{
     app::{Action, App},
     config::SearchMode,
     model::{Snapshot, Target},
-    search::Row,
+    search::{Row, RowKind},
     theme::{Palette, Theme},
 };
 
@@ -188,6 +188,27 @@ pub fn label_spans(label: &str, matches: &[usize], width: usize) -> Vec<Span<'st
     spans
 }
 
+fn kind_color(kind: RowKind, palette: Palette) -> Color {
+    match kind {
+        RowKind::RootWorkspace => palette.accent,
+        RowKind::Worktree => palette.green,
+        RowKind::Tab => palette.blue,
+    }
+}
+
+fn colored_label_spans(
+    label: &str,
+    matches: &[usize],
+    width: usize,
+    kind: RowKind,
+    palette: Palette,
+) -> Vec<Span<'static>> {
+    label_spans(label, matches, width)
+        .into_iter()
+        .map(|span| span.fg(kind_color(kind, palette)))
+        .collect()
+}
+
 fn row_line(
     row: &Row,
     flat: bool,
@@ -211,7 +232,13 @@ fn row_line(
             }
             let ancestor_width =
                 ((remaining - separators) / parts_left).min(ancestor.label.width());
-            let ancestor_spans = label_spans(&ancestor.label, &ancestor.matches, ancestor_width);
+            let ancestor_spans = colored_label_spans(
+                &ancestor.label,
+                &ancestor.matches,
+                ancestor_width,
+                ancestor.kind,
+                palette,
+            );
             let used: usize = ancestor_spans.iter().map(|span| span.content.width()).sum();
             spans.extend(ancestor_spans);
             spans.push(Span::raw(" / "));
@@ -226,15 +253,36 @@ fn row_line(
         && remaining >= 5
     {
         let workspace_width = (remaining / 2).min(row.label.width());
-        spans.extend(label_spans(&row.label, &row.label_matches, workspace_width));
+        spans.extend(colored_label_spans(
+            &row.label,
+            &row.label_matches,
+            workspace_width,
+            row.kind,
+            palette,
+        ));
         spans.push(Span::raw(" - "));
         remaining = remaining.saturating_sub(workspace_width + 3);
-        spans.extend(label_spans(tab, &row.inline_tab_matches, remaining));
+        spans.extend(colored_label_spans(
+            tab,
+            &row.inline_tab_matches,
+            remaining,
+            RowKind::Tab,
+            palette,
+        ));
     } else {
-        spans.extend(label_spans(&row.label, &row.label_matches, remaining));
+        spans.extend(colored_label_spans(
+            &row.label,
+            &row.label_matches,
+            remaining,
+            row.kind,
+            palette,
+        ));
     }
     let style = if selected {
-        palette.primary_style()
+        palette
+            .base_style()
+            .bg(palette.selection_bg)
+            .add_modifier(Modifier::BOLD)
     } else {
         palette.base_style()
     };
