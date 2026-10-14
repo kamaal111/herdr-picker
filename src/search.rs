@@ -67,6 +67,7 @@ impl Search {
             .collect();
         let mut matches = vec![Vec::new(); labels.len()];
         let mut score = 0;
+        let mut joined_labels = None;
         for term in terms {
             let best = labels
                 .iter()
@@ -76,11 +77,36 @@ impl Search {
                         .map(|(score, indices)| (score, level, indices))
                 })
                 .max_by_key(|(score, level, _)| (*score, *level));
-            let Some((term_score, level, indices)) = best else {
+            if let Some((term_score, level, indices)) = best {
+                score += term_score;
+                matches[level].extend(indices);
+                continue;
+            }
+            let (joined, ranges) = joined_labels.get_or_insert_with(|| {
+                let mut start = 0;
+                let ranges: Vec<_> = labels
+                    .iter()
+                    .map(|label| {
+                        let end = start + label.chars().count();
+                        let range = start..end;
+                        start = end + 1;
+                        range
+                    })
+                    .collect();
+                (labels.join(" "), ranges)
+            });
+            let Some((term_score, indices)) = self.matched(joined, term) else {
                 return false;
             };
             score += term_score;
-            matches[level].extend(indices);
+            for (level, range) in ranges.iter().enumerate() {
+                matches[level].extend(
+                    indices
+                        .iter()
+                        .filter(|index| range.contains(index))
+                        .map(|index| index - range.start),
+                );
+            }
         }
         for indices in &mut matches {
             indices.sort_unstable();

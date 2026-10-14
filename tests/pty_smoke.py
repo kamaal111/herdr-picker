@@ -140,6 +140,8 @@ case(b"codex\x0e\r", expected=[["tab", "focus", "w2:t7"]])
 case(b"server\r", mode="flat", expected=[["tab", "focus", "w2:t2"]])
 case(b"exact terminal\r", expected=[["workspace", "focus", "w3"]])
 case(b"exact terminal\r", mode="flat", expected=[["workspace", "focus", "w3"]])
+case(b"pickercodex\r", mode="flat", expected=[["tab", "focus", "w1:t8"]])
+case(b"codexterminal\r", expected=[["workspace", "focus", "w3"]])
 case(
     b"\r",
     failure="w1",
@@ -158,7 +160,7 @@ case(
 )
 WORKTREE_FIXTURE = ROOT / "tests/fixtures/worktrees.json"
 case(
-    b"herdr-picker multimachine codex\x0e\x0e\r",
+    b"herdr-pickermultimachinecodex\x0e\x0e\r",
     fixture=WORKTREE_FIXTURE,
     expected=[["tab", "focus", "w2:t1"]],
 )
@@ -188,5 +190,5 @@ case(
     expected=[["workspace", "focus", "w3"]],
 )
 print(
-    "18 PTY smoke scenarios passed (Escape including slow discovery, filtering, workspace/tab focus, nested worktrees, flat mode, failure recovery; resize and terminal cleanup)"
+    "20 PTY smoke scenarios passed (Escape including slow discovery, filtering, workspace/tab focus, nested worktrees, flat mode, failure recovery; resize and terminal cleanup)"
 )
