@@ -5,6 +5,9 @@ use herdr_picker::{
 };
 use serde_json::{Value, json};
 
+#[cfg(unix)]
+static CLI_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn fixture() -> Value {
     serde_json::from_slice(include_bytes!("fixtures/snapshot.json")).unwrap()
 }
@@ -150,6 +153,8 @@ fn typo_in_configuration_is_reported() {
 }
 #[test]
 fn unavailable_cli_is_reported() {
+    #[cfg(unix)]
+    let _guard = CLI_TEST_LOCK.lock().unwrap();
     assert!(
         Herdr {
             binary: "/nonexistent/herdr-picker-test-cli".into()
@@ -168,14 +173,20 @@ mod cli {
         fs,
         os::unix::fs::PermissionsExt,
         path::PathBuf,
-        sync::atomic::{AtomicUsize, Ordering},
+        sync::{
+            MutexGuard,
+            atomic::{AtomicUsize, Ordering},
+        },
+        time::{Duration, Instant},
     };
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     struct Fake {
         path: PathBuf,
+        _guard: MutexGuard<'static, ()>,
     }
     impl Fake {
         fn new(script: &str) -> Self {
+            let guard = CLI_TEST_LOCK.lock().unwrap();
             let path = std::env::temp_dir().join(format!(
                 "herdr-picker-test-{}-{}",
                 std::process::id(),
@@ -184,7 +195,10 @@ mod cli {
             fs::create_dir(&path).unwrap();
             fs::write(path.join("herdr"), format!("#!/bin/sh\n{script}\n")).unwrap();
             fs::set_permissions(path.join("herdr"), fs::Permissions::from_mode(0o700)).unwrap();
-            Self { path }
+            Self {
+                path,
+                _guard: guard,
+            }
         }
         fn api(&self) -> Herdr {
             Herdr {
@@ -258,10 +272,12 @@ mod cli {
     #[test]
     fn cli_timeout_is_bounded() {
         let fake = Fake::new("exec sleep 30");
-        assert_eq!(
-            fake.api().snapshot().unwrap_err().to_string(),
-            "Herdr request timed out"
-        );
+        let started = Instant::now();
+        let error = fake.api().snapshot().unwrap_err();
+        let elapsed = started.elapsed();
+        assert_eq!(error.to_string(), "Herdr request timed out", "{error:#}");
+        assert!(elapsed >= Duration::from_secs(5), "{elapsed:?}");
+        assert!(elapsed < Duration::from_secs(15), "{elapsed:?}");
     }
 }
 
