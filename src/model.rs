@@ -9,6 +9,26 @@ pub struct Workspace {
     pub label: String,
     pub number: usize,
     pub active_tab_id: String,
+    pub worktree: Option<WorktreeProvenance>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct WorktreeProvenance {
+    pub repo_key: Option<String>,
+    pub is_linked_worktree: Option<bool>,
+}
+
+impl Workspace {
+    fn repository(&self) -> Option<(&str, bool)> {
+        let provenance = self.worktree.as_ref()?;
+        let key = provenance.repo_key.as_deref()?;
+        (!key.trim().is_empty()).then_some((key, provenance.is_linked_worktree?))
+    }
+}
+
+pub struct WorkspaceGroup<'a> {
+    pub root: &'a Workspace,
+    pub worktrees: Vec<&'a Workspace>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -28,6 +48,40 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
+    pub fn workspace_groups(&self) -> Vec<WorkspaceGroup<'_>> {
+        let mut ordered: Vec<_> = self.workspaces.iter().collect();
+        ordered.sort_by_key(|workspace| workspace.number);
+        let parents: Vec<_> = ordered
+            .iter()
+            .map(|workspace| {
+                let (key, linked) = workspace.repository()?;
+                if !linked {
+                    return None;
+                }
+                let mut roots = ordered
+                    .iter()
+                    .copied()
+                    .filter(|root| root.repository() == Some((key, false)));
+                let root = roots.next()?;
+                roots.next().is_none().then_some(root.workspace_id.as_str())
+            })
+            .collect();
+        ordered
+            .iter()
+            .zip(&parents)
+            .filter(|(_, parent)| parent.is_none())
+            .map(|(root, _)| WorkspaceGroup {
+                root,
+                worktrees: ordered
+                    .iter()
+                    .zip(&parents)
+                    .filter(|(_, parent)| **parent == Some(root.workspace_id.as_str()))
+                    .map(|(workspace, _)| *workspace)
+                    .collect(),
+            })
+            .collect()
+    }
+
     pub fn validate(&mut self) -> Result<()> {
         let mut workspace_ids = HashSet::new();
         for workspace in &self.workspaces {

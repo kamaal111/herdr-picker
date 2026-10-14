@@ -3,11 +3,11 @@
 key = "cmd+p"
 type = "plugin_action"
 command = "herdr-picker.open"
-description = "Search workspaces and tabs"
+description = "Search workspaces, worktrees and tabs"
 
 # Reliable terminal fallback: Herdr's configured prefix, then f.
 [[keys.command]]
 key = "prefix+f"
 type = "plugin_action"
 command = "herdr-picker.open"
-description = "Search workspaces and tabs"
+description = "Search workspaces, worktrees and tabs"

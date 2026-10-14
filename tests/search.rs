@@ -105,7 +105,7 @@ fn flat_workspace_result_is_independent() {
 fn flat_tab_retains_parent_context() {
     let result = rows("server", SearchMode::Flat);
     assert_eq!(result.len(), 1);
-    assert_eq!(result[0].parent.as_deref(), Some("TCG"));
+    assert_eq!(result[0].ancestors[0].label, "TCG");
     assert_eq!(result[0].target, tab("w2:t2"));
 }
 #[test]
@@ -119,7 +119,7 @@ fn highlights_match_both_hierarchy_labels() {
     let result = rows("col codex", SearchMode::Flat);
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].label_matches, vec![0, 1, 2, 3, 4]);
-    assert_eq!(result[0].parent_matches, vec![0, 1, 2]);
+    assert_eq!(result[0].ancestors[0].matches, vec![0, 1, 2]);
 }
 #[test]
 fn query_term_order_is_independent() {
@@ -159,7 +159,7 @@ fn assert_single_tab_workspace(mode: SearchMode) {
         assert_eq!(combined[0].target, workspace("w3"));
         assert_eq!(combined[0].label, "Exact Codex");
         assert_eq!(combined[0].inline_tab.as_deref(), Some("Terminal"));
-        assert_eq!(combined[0].parent, None);
+        assert!(combined[0].ancestors.is_empty());
     }
     let result = rows("exact terminal", mode);
     assert_eq!(result.len(), 1);
@@ -188,4 +188,141 @@ fn filtered_multi_tab_workspace_does_not_become_inline() {
     let flat = rows("server", SearchMode::Flat);
     assert_eq!(ids(&flat), vec![tab("w2:t2")]);
     assert_eq!(flat[0].inline_tab, None);
+}
+
+fn worktree_rows(query: &str, mode: SearchMode) -> Vec<Row> {
+    let snapshot = parse_snapshot(include_bytes!("fixtures/worktrees.json")).unwrap();
+    Search::default().rows(&snapshot, query, mode)
+}
+
+#[test]
+fn worktrees_are_nested_once_after_root_tabs_in_ui_order() {
+    assert_eq!(
+        ids(&worktree_rows("", SearchMode::Hierarchical)),
+        vec![
+            workspace("w1"),
+            tab("w1:t1"),
+            tab("w1:t2"),
+            workspace("w2"),
+            tab("w2:t1"),
+            tab("w2:t2"),
+            workspace("w3"),
+            workspace("w4"),
+            workspace("w5"),
+            tab("w5:t1"),
+            tab("w5:t2"),
+            workspace("w0")
+        ]
+    );
+}
+
+#[test]
+fn root_search_reveals_worktrees_and_their_tabs() {
+    assert_eq!(
+        worktree_rows("herdr-picker", SearchMode::Hierarchical).len(),
+        11
+    );
+}
+
+#[test]
+fn worktree_search_retains_selectable_root_and_inline_tab() {
+    let result = worktree_rows("just", SearchMode::Hierarchical);
+    assert_eq!(ids(&result), vec![workspace("w1"), workspace("w4")]);
+    assert_eq!(result[1].inline_tab.as_deref(), Some("Terminal"));
+}
+
+#[test]
+fn three_level_search_keeps_only_matching_branch_and_ancestors() {
+    assert_eq!(
+        ids(&worktree_rows(
+            "herdr-picker multimachine codex",
+            SearchMode::Hierarchical
+        )),
+        vec![workspace("w1"), workspace("w2"), tab("w2:t1")]
+    );
+    assert_eq!(
+        ids(&worktree_rows(
+            "herdr-picker just terminal",
+            SearchMode::Hierarchical
+        )),
+        vec![workspace("w1"), workspace("w4")]
+    );
+    assert!(worktree_rows("herdr-picker just nonexistent", SearchMode::Hierarchical).is_empty());
+    assert!(worktree_rows("pickermultimachine", SearchMode::Flat).is_empty());
+}
+
+#[test]
+fn nested_rows_have_full_ancestor_context_and_depth() {
+    let result = worktree_rows("herdr-picker multimachine codex", SearchMode::Hierarchical);
+    assert_eq!(
+        result.iter().map(|row| row.depth).collect::<Vec<_>>(),
+        vec![0, 1, 2]
+    );
+    assert_eq!(
+        result[2]
+            .ancestors
+            .iter()
+            .map(|a| a.label.as_str())
+            .collect::<Vec<_>>(),
+        vec!["herdr-picker", "multimachine"]
+    );
+    assert_eq!(result[0].label_matches, (0..12).collect::<Vec<_>>());
+    assert_eq!(result[1].label_matches, (0..12).collect::<Vec<_>>());
+    assert_eq!(result[2].label_matches, (0..5).collect::<Vec<_>>());
+}
+
+#[test]
+fn flat_nested_tab_matches_and_highlights_all_three_names() {
+    let result = worktree_rows("herdr-picker multimachine codex", SearchMode::Flat);
+    assert_eq!(ids(&result), vec![tab("w2:t1")]);
+    assert_eq!(result[0].ancestors[0].label, "herdr-picker");
+    assert_eq!(result[0].ancestors[1].label, "multimachine");
+    assert_eq!(result[0].ancestors[0].matches, (0..12).collect::<Vec<_>>());
+    assert_eq!(result[0].ancestors[1].matches, (0..12).collect::<Vec<_>>());
+    assert_eq!(result[0].label_matches, (0..5).collect::<Vec<_>>());
+}
+
+#[test]
+fn flat_worktree_results_are_independent_and_preserve_inline_tab_search() {
+    let result = worktree_rows("herdr-picker just terminal", SearchMode::Flat);
+    assert_eq!(ids(&result), vec![workspace("w4")]);
+    assert_eq!(result[0].ancestors[0].label, "herdr-picker");
+    assert_eq!(result[0].inline_tab.as_deref(), Some("Terminal"));
+    assert_eq!(result[0].inline_tab_matches, (0..8).collect::<Vec<_>>());
+}
+
+#[test]
+fn equal_name_scores_highlight_the_deepest_matching_label() {
+    let mut snapshot = parse_snapshot(include_bytes!("fixtures/worktrees.json")).unwrap();
+    snapshot.workspaces[1].label = "Codex".into();
+    snapshot.workspaces[2].label = "Codex".into();
+    let result = Search::default().rows(&snapshot, "codex", SearchMode::Flat);
+    let tab = result
+        .iter()
+        .find(|row| row.target == Target::Tab("w2:t1".into()))
+        .unwrap();
+    assert!(
+        tab.ancestors
+            .iter()
+            .all(|ancestor| ancestor.matches.is_empty())
+    );
+    assert_eq!(tab.label_matches, (0..5).collect::<Vec<_>>());
+}
+
+#[test]
+fn single_root_tab_is_not_search_context_for_other_worktrees() {
+    let mut snapshot = parse_snapshot(include_bytes!("fixtures/worktrees.json")).unwrap();
+    snapshot.tabs.retain(|tab| tab.tab_id != "w1:t2");
+    let result = Search::default().rows(&snapshot, "terminal", SearchMode::Hierarchical);
+    assert_eq!(result[0].inline_tab.as_deref(), Some("Terminal"));
+    assert!(
+        result
+            .iter()
+            .all(|row| row.target != Target::Tab("w2:t1".into()))
+    );
+    assert!(
+        result
+            .iter()
+            .all(|row| row.target != Target::Tab("w5:t1".into()))
+    );
 }

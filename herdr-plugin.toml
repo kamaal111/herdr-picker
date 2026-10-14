@@ -10,7 +10,7 @@ command = ["cargo", "build", "--release", "--locked"]
 
 [[actions]]
 id = "open"
-title = "Search workspaces and tabs"
+title = "Search workspaces, worktrees and tabs"
 command = ["./target/release/herdr-picker", "open"]
 
 [[panes]]

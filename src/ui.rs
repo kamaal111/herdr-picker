@@ -80,7 +80,7 @@ fn wait_for_snapshot(
         }
         terminal.draw(|frame| {
             frame.render_widget(
-                Paragraph::new("Loading workspaces and tabs…  Esc Close"),
+                Paragraph::new("Loading workspaces, worktrees and tabs…  Esc Close"),
                 frame.area(),
             )
         })?;
@@ -173,17 +173,25 @@ fn row_line(row: &Row, flat: bool, width: usize, selected: bool) -> Line<'static
     );
     let mut spans = vec![Span::raw(prefix)];
     let mut remaining = width.saturating_sub(3);
-    if let Some(parent) = &row.parent {
-        if flat {
-            let parent_width = (remaining / 2).min(parent.width());
-            spans.extend(label_spans(parent, &row.parent_matches, parent_width));
-            let separator = " / ";
-            spans.push(Span::raw(separator));
-            remaining = remaining.saturating_sub(parent_width + separator.len());
-        } else {
-            spans.push(Span::raw("  "));
-            remaining = remaining.saturating_sub(2);
+    if flat {
+        for (index, ancestor) in row.ancestors.iter().enumerate() {
+            let parts_left = row.ancestors.len() - index + 1;
+            let separators = 3 * (parts_left - 1);
+            if remaining <= separators {
+                break;
+            }
+            let ancestor_width =
+                ((remaining - separators) / parts_left).min(ancestor.label.width());
+            let ancestor_spans = label_spans(&ancestor.label, &ancestor.matches, ancestor_width);
+            let used: usize = ancestor_spans.iter().map(|span| span.content.width()).sum();
+            spans.extend(ancestor_spans);
+            spans.push(Span::raw(" / "));
+            remaining = remaining.saturating_sub(used + 3);
         }
+    } else {
+        let indent = (row.depth * 2).min(remaining);
+        spans.push(Span::raw(" ".repeat(indent)));
+        remaining = remaining.saturating_sub(indent);
     }
     if let Some(tab) = &row.inline_tab
         && remaining >= 5
@@ -221,7 +229,7 @@ pub fn render(frame: &mut Frame<'_>, app: &mut App) {
     let count = format!(" {} results ", app.rows.len());
     let input_width = usize::from(chunks[0].width).saturating_sub(count.len());
     let prompt = if app.query.is_empty() {
-        "Search workspaces and tabs"
+        "Search workspaces, worktrees and tabs"
     } else {
         &app.query
     };
