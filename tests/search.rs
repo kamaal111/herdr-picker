@@ -117,9 +117,13 @@ fn flat_rank_puts_exact_name_above_longer_matches() {
 #[test]
 fn highlights_match_both_hierarchy_labels() {
     let result = rows("col codex", SearchMode::Flat);
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].label_matches, vec![0, 1, 2, 3, 4]);
-    assert_eq!(result[0].ancestors[0].matches, vec![0, 1, 2]);
+    assert_eq!(ids(&result), vec![tab("w1:t8"), workspace("w3")]);
+    let codex = result
+        .iter()
+        .find(|row| row.target == tab("w1:t8"))
+        .unwrap();
+    assert_eq!(codex.label_matches, vec![0, 1, 2, 3, 4]);
+    assert_eq!(codex.ancestors[0].matches, vec![0, 1, 2]);
 }
 #[test]
 fn query_term_order_is_independent() {
@@ -136,8 +140,19 @@ fn duplicate_display_names_keep_distinct_ids() {
 }
 
 #[test]
-fn one_term_cannot_stitch_together_fragments_from_two_names() {
-    assert!(rows("pickercod", SearchMode::Flat).is_empty());
+fn one_term_matches_across_parent_and_child_without_spaces() {
+    let result = rows("pickercod", SearchMode::Flat);
+    assert_eq!(ids(&result), vec![tab("w1:t8"), tab("w1:t4")]);
+    let codex = result
+        .iter()
+        .find(|row| row.target == tab("w1:t8"))
+        .unwrap();
+    assert_eq!(codex.ancestors[0].matches, (5..11).collect::<Vec<_>>());
+    assert_eq!(codex.label_matches, vec![0, 1, 2]);
+    assert_eq!(
+        ids(&rows("pickercod", SearchMode::Hierarchical)),
+        vec![workspace("w1"), tab("w1:t4"), tab("w1:t8")]
+    );
 }
 
 #[test]
@@ -166,7 +181,7 @@ fn assert_single_tab_workspace(mode: SearchMode) {
     assert_eq!(result[0].label_matches, vec![0, 1, 2, 3, 4]);
     assert_eq!(result[0].inline_tab_matches, vec![0, 1, 2, 3, 4, 5, 6, 7]);
     assert!(!result[0].active);
-    assert!(rows("codexterminal", mode).is_empty());
+    assert_eq!(ids(&rows("codexterminal", mode)), vec![workspace("w3")]);
     assert!(rows("exact nonexistent", mode).is_empty());
 }
 
@@ -248,7 +263,10 @@ fn three_level_search_keeps_only_matching_branch_and_ancestors() {
         vec![workspace("w1"), workspace("w4")]
     );
     assert!(worktree_rows("herdr-picker just nonexistent", SearchMode::Hierarchical).is_empty());
-    assert!(worktree_rows("pickermultimachine", SearchMode::Flat).is_empty());
+    assert_eq!(
+        ids(&worktree_rows("pickermultimachine", SearchMode::Flat)),
+        vec![workspace("w2"), tab("w2:t1"), tab("w2:t2")]
+    );
 }
 
 #[test]
@@ -359,4 +377,67 @@ fn ungrouped_linked_worktree_uses_root_kind() {
     assert_eq!(result[0].kind, RowKind::Tab);
     assert_eq!(result[0].ancestors.len(), 1);
     assert_eq!(result[0].ancestors[0].kind, RowKind::RootWorkspace);
+}
+
+#[test]
+fn space_free_three_level_search_highlights_each_label() {
+    let query = "herdr-pickermultimachinecodex";
+    let result = worktree_rows(query, SearchMode::Flat);
+    assert_eq!(ids(&result), vec![tab("w2:t1")]);
+    assert_eq!(result[0].ancestors[0].matches, (0..12).collect::<Vec<_>>());
+    assert_eq!(result[0].ancestors[1].matches, (0..12).collect::<Vec<_>>());
+    assert_eq!(result[0].label_matches, (0..5).collect::<Vec<_>>());
+    assert_eq!(
+        ids(&worktree_rows(query, SearchMode::Hierarchical)),
+        vec![workspace("w1"), workspace("w2"), tab("w2:t1")]
+    );
+}
+
+#[test]
+fn space_free_fuzzy_search_can_skip_an_intermediate_label() {
+    assert_eq!(
+        ids(&worktree_rows("hdrpkrmltmchn", SearchMode::Flat)),
+        vec![workspace("w2"), tab("w2:t1"), tab("w2:t2")]
+    );
+    assert_eq!(
+        ids(&worktree_rows("herdr-pickercodex", SearchMode::Flat)),
+        vec![tab("w2:t1"), tab("w5:t1")]
+    );
+}
+
+#[test]
+fn space_free_search_cannot_reverse_labels_or_combine_siblings() {
+    assert!(rows("codexpicker", SearchMode::Flat).is_empty());
+    assert!(rows("servercodex", SearchMode::Hierarchical).is_empty());
+    assert!(worktree_rows("multimachinejust", SearchMode::Flat).is_empty());
+    assert!(rows("tcgcolorpicker", SearchMode::Flat).is_empty());
+}
+
+#[test]
+fn space_free_search_maps_unicode_indices_to_each_label() {
+    let mut snapshot = parse_snapshot(include_bytes!("fixtures/snapshot.json")).unwrap();
+    snapshot.workspaces[2].label = "日本Exact".into();
+    snapshot
+        .tabs
+        .iter_mut()
+        .find(|tab| tab.tab_id == "w3:t1")
+        .unwrap()
+        .label = "世界Terminal".into();
+    let result = Search::default().rows(&snapshot, "exactterminal", SearchMode::Flat);
+    assert_eq!(ids(&result), vec![workspace("w3")]);
+    assert_eq!(result[0].label_matches, (2..7).collect::<Vec<_>>());
+    assert_eq!(result[0].inline_tab_matches, (2..10).collect::<Vec<_>>());
+}
+
+#[test]
+fn space_free_terms_keep_and_semantics_and_order_independence() {
+    assert_eq!(
+        ids(&rows("pickercod codex", SearchMode::Flat)),
+        vec![tab("w1:t8")]
+    );
+    assert_eq!(
+        ids(&rows("codex pickercod", SearchMode::Flat)),
+        vec![tab("w1:t8")]
+    );
+    assert!(rows("pickercod nonexistent", SearchMode::Flat).is_empty());
 }
