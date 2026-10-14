@@ -139,11 +139,31 @@ The centered popup is 80% wide and at most 22 outer rows, clamped by Herdr to th
 
 ## Development
 
+With [Just](https://github.com/casey/just) installed, run `just` to list the available recipes. CI uses Just 1.58.0 and runs the same complete verification workflow on macOS and Linux:
+
+```sh
+just ready
+```
+
+Use `just quality` for formatting and lint checks, `just test` for Rust tests, or `just test-pty` to build and smoke test the release binary. `just format` (alias `just fmt`) formats Rust code; `just format-check` (alias `just fmt-c`) checks it. `just ready` and `just test-pty` require Python 3.
+
+For local plugin development with Herdr installed:
+
+```sh
+just plugin-link
+just plugin-check
+just plugin-open
+```
+
+`plugin-link` builds and registers this checkout globally for the current user. `plugin-check` validates a live snapshot without changing focus. `plugin-open` rebuilds and opens the already linked plugin in a running Herdr session. These recipes honor `HERDR_BIN_PATH`. Use `just plugin-unlink` to unregister it without deleting local files.
+
+Without Just, run the equivalent verification commands directly:
+
 ```sh
 cargo fmt --all -- --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-features
-cargo build --release
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked --all-features
+cargo build --locked --release --target-dir target
 python3 tests/pty_smoke.py
 ```
 
