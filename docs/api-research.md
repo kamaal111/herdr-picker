@@ -24,7 +24,7 @@ Investigated 2026-10-14 against installed Herdr 0.9.5 (protocol 22), the bundled
 | Existing workspace focus | `herdr workspace focus ID` maps to `workspace.focus`; server validates the ID then calls `switch_workspace`, preserving remembered active tab. |
 | Existing tab focus | `herdr tab focus ID` maps to `tab.focus`; server resolves tab and parent together before `switch_workspace_tab`. No preceding workspace request is necessary; that avoids a partial switch if the tab has closed. |
 | Focus history/MRU | Snapshot has no timestamps, history, previous-workspace field, or MRU array. Its arrays are UI order. No history read method appears in bundled schema. See MRU analysis below. |
-| Theme | Runtime environment/context and public schema have no plugin theme object/API. Use default foreground/background, reverse-video selection, bold/underline matches, and dim secondary text. Do not parse private config/theme internals. |
+| Theme | Runtime environment/context and public schema have no plugin theme object/API. The picker now reads saved Herdr configuration and reproduces the built-in palettes, aliases, custom overrides, and light/dark resolution from the pinned revision. This is source-version compatibility rather than a live exported palette: unsaved previews and future palette changes are not available automatically. The config is never written. |
 | Launch shortcut | `[[keys.command]]` with `type = "plugin_action"`, `command = "herdr-picker.open"`, and `key = "cmd+p"`. Shortcut lives in Herdr config, not plugin TOML. `prefix+f` is the terminal-compatible fallback. |
 | Plugin configuration | Herdr supplies `HERDR_PLUGIN_CONFIG_DIR` and creates the directory. File format is explicitly plugin-owned. Read `config.toml` with just `search_mode`; do not write it at runtime. `HERDR_PLUGIN_STATE_DIR` is not needed. |
 | Close after switching | Restore terminal modes, focus while the popup is still active, and let process exit close it. No explicit `popup.close` request is needed. Do not issue it before focus: it tears down the popup runtime and can terminate its process. |
@@ -68,3 +68,15 @@ All links below are pinned to the inspected revision:
 ## Validation boundary
 
 A running local Herdr 0.9.5 server successfully answered a read-only snapshot request. Its actual response envelope matches the fixture and parser. Automated tests use a sanitized synthetic fixture and fake CLI; no real project paths, native agent session IDs, or user snapshot files are committed. Public source confirms focus/cleanup behavior, but live popup launching, focus operations, pane preservation, mouse forwarding, and terminal-specific shortcuts were not exercised against the user's session to avoid disrupting work. See [manual testing](manual-testing.md).
+
+## Picker theme compatibility
+
+The theme adapter and Settings-style action footer follow the same pinned
+revision's [palette definitions](https://github.com/herdrdev/herdr/blob/916fcf8de029c6cac965b50f3cdb9687cd7d1537/src/app/state.rs),
+[resolution rules](https://github.com/herdrdev/herdr/blob/916fcf8de029c6cac965b50f3cdb9687cd7d1537/src/app/mod.rs),
+[theme configuration](https://github.com/herdrdev/herdr/blob/916fcf8de029c6cac965b50f3cdb9687cd7d1537/src/config/theme.rs),
+and [Settings renderer](https://github.com/herdrdev/herdr/blob/916fcf8de029c6cac965b50f3cdb9687cd7d1537/src/client/shell/settings_overlay.rs).
+Adapted palette code retains Apache-2.0 attribution in `src/theme.rs` and
+`LICENSES/Herdr-Apache-2.0.txt`. Appearance uses a nonblocking CSI ?996n query
+and mode 2031 reports. All keyboard and mouse events continue through one
+input reader; reporting is disabled by the terminal guard on exit.

@@ -4,13 +4,14 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.88"
 description = "A keyboard-first workspace and tab picker for Herdr"
-license = "MIT"
+license = "MIT AND Apache-2.0"
 keywords = ["herdr", "terminal", "picker", "workspace"]
 categories = ["command-line-utilities"]
 
 [dependencies]
 anyhow = "1.0"
 crossterm = "0.28"
+terminal_input = { package = "helix-crossterm", version = "=0.1.0-beta.1" }
 nucleo-matcher = "0.3"
 ratatui = { version = "0.29", default-features = false, features = ["crossterm"] }
 serde = { version = "1.0", features = ["derive"] }

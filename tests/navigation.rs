@@ -1,6 +1,3 @@
-use crossterm::event::{
-    Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
-};
 use herdr_picker::{
     api::parse_snapshot,
     app::{Action, App},
@@ -8,6 +5,9 @@ use herdr_picker::{
     model::Target,
 };
 use ratatui::layout::Rect;
+use terminal_input::event::{
+    Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 
 fn app() -> App {
     App::new(
@@ -280,5 +280,159 @@ fn nested_rows_remain_reachable_after_scrolling_and_query_reset() {
     assert_eq!(
         app.handle(key(KeyCode::Enter)),
         Action::Switch(Target::Workspace("w4".into()))
+    );
+}
+
+fn drawn_app(width: u16, height: u16) -> App {
+    let mut app = app();
+    let mut terminal =
+        ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+    terminal
+        .draw(|frame| herdr_picker::ui::render(frame, &mut app))
+        .unwrap();
+    app
+}
+
+fn click(column: u16, row: u16, kind: MouseEventKind) -> Event {
+    Event::Mouse(MouseEvent {
+        kind,
+        column,
+        row,
+        modifiers: KeyModifiers::NONE,
+    })
+}
+
+#[test]
+fn ok_click_performs_enter_for_workspace_and_tab() {
+    let mut app = drawn_app(80, 20);
+    let ok = app.ok_area;
+    assert_eq!(
+        app.handle(click(ok.x, ok.y, MouseEventKind::Down(MouseButton::Left))),
+        Action::Switch(Target::Workspace("w1".into()))
+    );
+    app.set_query("colorpicker".into());
+    app.navigate(1);
+    assert_eq!(
+        app.handle(click(
+            ok.right() - 1,
+            ok.y,
+            MouseEventKind::Down(MouseButton::Left)
+        )),
+        app.handle(key(KeyCode::Enter))
+    );
+    assert_eq!(
+        app.handle(key(KeyCode::Enter)),
+        Action::Switch(Target::Tab("w1:t4".into()))
+    );
+}
+
+#[test]
+fn cancel_closes_without_changing_query_or_selection() {
+    let mut app = drawn_app(80, 20);
+    app.set_query("color".into());
+    let selected = app.selected;
+    let cancel = app.cancel_area;
+    assert_eq!(
+        app.handle(click(
+            cancel.x,
+            cancel.y,
+            MouseEventKind::Down(MouseButton::Left)
+        )),
+        Action::Close
+    );
+    assert_eq!(app.query, "color");
+    assert_eq!(app.selected, selected);
+}
+
+#[test]
+fn empty_results_disable_ok_but_cancel_still_closes() {
+    let mut app = drawn_app(80, 20);
+    app.set_query("nonexistenttttt".into());
+    assert_eq!(
+        app.handle(click(
+            app.ok_area.x,
+            app.ok_area.y,
+            MouseEventKind::Down(MouseButton::Left)
+        )),
+        Action::Continue
+    );
+    assert_eq!(
+        app.handle(click(
+            app.cancel_area.x,
+            app.cancel_area.y,
+            MouseEventKind::Down(MouseButton::Left)
+        )),
+        Action::Close
+    );
+}
+
+#[test]
+fn button_gaps_releases_and_right_clicks_do_nothing() {
+    let mut app = drawn_app(80, 20);
+    let ok = app.ok_area;
+    assert_eq!(
+        app.handle(click(
+            ok.right(),
+            ok.y,
+            MouseEventKind::Down(MouseButton::Left)
+        )),
+        Action::Continue
+    );
+    assert_eq!(
+        app.handle(click(ok.x, ok.y, MouseEventKind::Up(MouseButton::Left))),
+        Action::Continue
+    );
+    assert_eq!(
+        app.handle(click(
+            app.cancel_area.x,
+            ok.y,
+            MouseEventKind::Down(MouseButton::Right)
+        )),
+        Action::Continue
+    );
+}
+
+#[test]
+fn resize_clears_old_button_hits_and_keeps_compact_cancel() {
+    let mut app = drawn_app(80, 20);
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(14, 10)).unwrap();
+    terminal
+        .draw(|frame| herdr_picker::ui::render(frame, &mut app))
+        .unwrap();
+    assert_eq!(app.ok_area, Rect::default());
+    assert_eq!(app.cancel_area, Rect::new(3, 9, 8, 1));
+    assert_eq!(
+        app.handle(click(0, 19, MouseEventKind::Down(MouseButton::Left))),
+        Action::Continue
+    );
+    assert_eq!(
+        app.handle(click(3, 9, MouseEventKind::Down(MouseButton::Left))),
+        Action::Close
+    );
+}
+
+#[test]
+fn appearance_changes_preserve_query_selection_and_scroll() {
+    let mut app = drawn_app(80, 20);
+    app.theme =
+        herdr_picker::theme::Theme::parse("[theme]\nname = 'catppuccin'\nauto_switch = true")
+            .unwrap();
+    app.set_query("color".into());
+    app.navigate(1);
+    app.ensure_visible(1);
+    let selected = app.selected;
+    let offset = app.offset;
+    assert_eq!(
+        app.handle(Event::ThemeModeChanged(
+            terminal_input::event::ThemeMode::Light
+        )),
+        Action::Continue
+    );
+    assert_eq!(app.query, "color");
+    assert_eq!(app.selected, selected);
+    assert_eq!(app.offset, offset);
+    assert_eq!(
+        app.theme.palette(),
+        herdr_picker::theme::Palette::catppuccin_latte()
     );
 }
