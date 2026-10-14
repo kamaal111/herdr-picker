@@ -46,8 +46,7 @@ fn tab_matches_keep_group_order_instead_of_fuzzy_rank() {
             tab("w2:t7"),
             workspace("w1"),
             tab("w1:t8"),
-            workspace("w3"),
-            tab("w3:t1")
+            workspace("w3")
         ]
     );
 }
@@ -81,11 +80,11 @@ fn no_results() {
 }
 #[test]
 fn empty_query_has_every_selectable_item() {
-    assert_eq!(rows("", SearchMode::Hierarchical).len(), 9);
+    assert_eq!(rows("", SearchMode::Hierarchical).len(), 8);
 }
 #[test]
 fn whitespace_query_has_every_selectable_item() {
-    assert_eq!(rows("  \t", SearchMode::Flat).len(), 9);
+    assert_eq!(rows("  \t", SearchMode::Flat).len(), 8);
 }
 #[test]
 fn branch_metadata_is_not_searchable() {
@@ -147,4 +146,46 @@ fn unicode_match_indices_address_visible_codepoints() {
     snapshot.workspaces[0].label = "日本ColorPic".into();
     let result = Search::default().rows(&snapshot, "colorpic", SearchMode::Hierarchical);
     assert_eq!(result[0].label_matches, vec![2, 3, 4, 5, 6, 7, 8, 9]);
+}
+
+fn assert_single_tab_workspace(mode: SearchMode) {
+    for query in ["", "  ", "exact", "terminal", "exact terminal"] {
+        let result = rows(query, mode);
+        let combined: Vec<_> = result
+            .iter()
+            .filter(|row| row.workspace_id == "w3")
+            .collect();
+        assert_eq!(combined.len(), 1);
+        assert_eq!(combined[0].target, workspace("w3"));
+        assert_eq!(combined[0].label, "Exact Codex");
+        assert_eq!(combined[0].inline_tab.as_deref(), Some("Terminal"));
+        assert_eq!(combined[0].parent, None);
+    }
+    let result = rows("exact terminal", mode);
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].label_matches, vec![0, 1, 2, 3, 4]);
+    assert_eq!(result[0].inline_tab_matches, vec![0, 1, 2, 3, 4, 5, 6, 7]);
+    assert!(!result[0].active);
+    assert!(rows("codexterminal", mode).is_empty());
+    assert!(rows("exact nonexistent", mode).is_empty());
+}
+
+#[test]
+fn hierarchical_single_tab_workspace_is_one_searchable_row() {
+    assert_single_tab_workspace(SearchMode::Hierarchical);
+}
+
+#[test]
+fn flat_single_tab_workspace_is_one_searchable_row() {
+    assert_single_tab_workspace(SearchMode::Flat);
+}
+
+#[test]
+fn filtered_multi_tab_workspace_does_not_become_inline() {
+    let hierarchical = rows("server", SearchMode::Hierarchical);
+    assert_eq!(ids(&hierarchical), vec![workspace("w2"), tab("w2:t2")]);
+    assert!(hierarchical.iter().all(|row| row.inline_tab.is_none()));
+    let flat = rows("server", SearchMode::Flat);
+    assert_eq!(ids(&flat), vec![tab("w2:t2")]);
+    assert_eq!(flat[0].inline_tab, None);
 }

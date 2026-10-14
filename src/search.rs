@@ -15,6 +15,8 @@ pub struct Row {
     pub workspace_id: String,
     pub label: String,
     pub parent: Option<String>,
+    pub inline_tab: Option<String>,
+    pub inline_tab_matches: Vec<usize>,
     pub label_matches: Vec<usize>,
     pub parent_matches: Vec<usize>,
     pub score: u32,
@@ -91,14 +93,33 @@ impl Search {
             .collect();
         let mut rows = Vec::new();
         for workspace in ordering::workspaces(snapshot) {
+            let tabs: Vec<_> = snapshot
+                .tabs
+                .iter()
+                .filter(|tab| tab.workspace_id == workspace.workspace_id)
+                .collect();
+            if let [tab] = tabs.as_slice() {
+                if let Some(matched) = self.hierarchy_match(&workspace.label, &tab.label, &terms) {
+                    rows.push(Row {
+                        target: Target::Workspace(workspace.workspace_id.clone()),
+                        workspace_id: workspace.workspace_id.clone(),
+                        label: workspace.label.clone(),
+                        parent: None,
+                        inline_tab: Some(tab.label.clone()),
+                        inline_tab_matches: matched.label,
+                        label_matches: matched.parent,
+                        parent_matches: Vec::new(),
+                        score: matched.score,
+                        active: snapshot.focused_workspace_id.as_ref()
+                            == Some(&workspace.workspace_id),
+                    });
+                }
+                continue;
+            }
             let workspace_match = self.matched(&workspace.label, &terms);
             let mut children = Vec::new();
             let mut context_matches = Vec::new();
-            for tab in snapshot
-                .tabs
-                .iter()
-                .filter(|t| t.workspace_id == workspace.workspace_id)
-            {
+            for tab in tabs {
                 if let Some(matched) = self.hierarchy_match(&workspace.label, &tab.label, &terms) {
                     context_matches.extend(&matched.parent);
                     children.push(Row {
@@ -106,6 +127,8 @@ impl Search {
                         workspace_id: workspace.workspace_id.clone(),
                         label: tab.label.clone(),
                         parent: Some(workspace.label.clone()),
+                        inline_tab: None,
+                        inline_tab_matches: Vec::new(),
                         label_matches: matched.label,
                         parent_matches: matched.parent,
                         score: matched.score,
@@ -122,6 +145,8 @@ impl Search {
                     workspace_id: workspace.workspace_id.clone(),
                     label: workspace.label.clone(),
                     parent: None,
+                    inline_tab: None,
+                    inline_tab_matches: Vec::new(),
                     label_matches,
                     parent_matches: Vec::new(),
                     score,

@@ -111,9 +111,11 @@ Create `config.toml` inside the printed directory:
 search_mode = "hierarchical"
 ```
 
-`hierarchical` is the default if the file or setting is absent. Every workspace is expanded, and every visible workspace/tab row is selectable. A workspace name match includes all its tabs. A tab match includes its selectable parent workspace. Groups keep their workspace order, and tabs keep Herdr's UI order, even during filtering.
+`hierarchical` is the default if the file or setting is absent. Workspaces with multiple tabs are expanded, and every visible workspace/tab row is selectable. A workspace name match includes all its tabs. A tab match includes its selectable parent workspace. Groups keep their workspace order, and tabs keep Herdr's UI order, even during filtering.
 
 Set `search_mode = "flat"` for independent results such as `ColorPicker / Codex` and `ColorPicker`. Nonempty searches rank by fuzzy relevance; empty searches use the same workspace order as hierarchical mode. Tab results can match their parent name as context.
+
+In both modes, a workspace with exactly one tab appears as a single `Workspace - Tab` row. Both names remain searchable and matching text is highlighted. Selecting this row focuses the workspace and restores its remembered tab and pane. The row counts as one result. Multi-tab workspaces keep their normal layout even when filtering matches only one tab.
 
 Matching ignores case, supports noncontiguous characters, and requires **every whitespace-separated term** to match a workspace or tab name. Each term must fit within one name; separate terms can match different levels. `color codex` finds `ColorPicker / Codex`. `color` can also match `ColorPicker / Claude Code` because `cod` genuinely matches “Code.” No branches, paths, panes, agent metadata, or unopened worktrees participate. Full names stay searchable after visual truncation.
 
