@@ -53,6 +53,24 @@ To unlink local development files without deleting them:
 herdr plugin unlink herdr-picker
 ```
 
+### Installing from a source directory
+
+Install Herdr 0.9.5 or newer and stable Rust/Cargo, then obtain the project source by cloning the repository or extracting a source archive. The source must include `Cargo.lock`, `Cargo.toml`, `rust-toolchain.toml`, `herdr-plugin.toml`, and `src/`. Build locally so the executable matches your OS and CPU; an existing `target/` directory is not needed.
+
+Start or attach to a Herdr session, then run from the project directory:
+
+```sh
+cd /path/to/herdr-picker
+cargo build --release --locked
+herdr plugin link "$PWD"
+./target/release/herdr-picker check
+herdr plugin action invoke herdr-picker.open
+```
+
+The `check` command validates discovery without changing focus. The final command opens the picker; press Escape to dismiss it or select a destination with Enter. Keep the project directory at that location while linked, because Herdr launches the executable from it.
+
+After confirming the action works, add a launch shortcut using the next section. Search mode defaults to hierarchical without creating a plugin config file. For a fuller check, follow [manual end-to-end verification](docs/manual-testing.md).
+
 ## Launch shortcut
 
 Add the following to your existing Herdr configuration (normally `~/.config/herdr/config.toml`; respect `HERDR_CONFIG_PATH` if set):
@@ -77,19 +95,7 @@ command = "herdr-picker.open"
 description = "Search workspaces and tabs"
 ```
 
-Use Herdr's configured prefix (the factory default is `Ctrl+B`), then `f`. This avoids needing terminal support for a Command/Super chord. On Linux you can use the same fallback, or a supported modified chord of your choice. Merely setting `cmd+p` in Herdr cannot make an outer terminal forward it.
-
-### WezTerm
-
-If WezTerm intercepts Command-P, merge this into its existing `config.keys` table:
-
-```lua
-local wezterm = require 'wezterm'
--- Inside config.keys:
-{ key = 'p', mods = 'CMD', action = wezterm.action.SendString '\x1b[112;9u' },
-```
-
-This forwards CSI-u `p` with Super/Command (modifier 9) for Herdr's `cmd+p` binding. Keep the matching Herdr binding above. The example is based on [WezTerm's key actions](https://wezterm.org/config/keys.html); forwarding in an actual WezTerm session remains a manual verification item. Other terminals need their own key forwarding configuration, or use `prefix+f`. No configuration is edited automatically. Complete snippets are in [examples](examples/).
+Use Herdr's configured prefix (the factory default is `Ctrl+B`), then `f`. If your terminal intercepts Cmd+P, use this fallback or choose another Herdr shortcut. Terminal configuration changes are not part of the normal installation.
 
 ## Search modes
 
@@ -161,7 +167,7 @@ src/config.rs         Strict TOML configuration
 src/main.rs           Entrypoints and error reporting/recovery
 tests/                Search, navigation, API, render, and PTY tests
 docs/                 Feasibility evidence and manual test procedure
-examples/             Herdr, picker, and WezTerm configuration
+examples/             Herdr and picker configuration
 ```
 
 ## Errors and troubleshooting
@@ -182,6 +188,6 @@ True session MRU, previous-workspace preselection, top alignment, and a plugin t
 
 Only the local selected Herdr session is covered; this release does not aggregate machines or sessions. Unknown response fields are ignored, while missing/duplicate IDs and broken parent relationships are rejected. Focus uses stable public IDs and preserves remembered tab/pane context through Herdr's focus methods. A focus failure triggers best-effort restoration; if the original destination also closed or the server is unavailable, restoration cannot be guaranteed.
 
-macOS builds, automated tests, PTY behavior, and live snapshot parsing were verified during development. Linux is configured in CI but was not executed locally. Actual popup installation/launch, live workspace/tab switching, active-pane preservation, mouse delivery, and WezTerm Command-P forwarding still require the documented manual test. No repository has been published, and no user shortcuts or terminal configuration have been changed.
+macOS builds, automated tests, PTY behavior, and live snapshot parsing were verified during development. Linux is configured in CI but was not executed locally. Actual popup installation/launch, live workspace/tab switching, active-pane preservation, and mouse delivery still require the documented manual test. No repository has been published, and no user shortcuts or terminal configuration have been changed.
 
 MIT licensed. Once published, maintainers can add the GitHub topic `herdr-plugin` for Herdr's community plugin index.

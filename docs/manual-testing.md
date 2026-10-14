@@ -36,7 +36,7 @@ Use a disposable Herdr session you control. These steps deliberately change focu
 ## Flat mode and shortcuts
 
 - Put `search_mode = "flat"` in the plugin config directory. Reopen and check `workspace / tab` labels, independent selectable workspace results, relevance ranking, and matching highlights on both labels. Invalid values must report errors. Restore the intended mode afterward.
-- Merge `examples/herdr.toml` into the disposable config. Check `cmd+p` with a terminal that forwards Super; if using WezTerm, test the provided CSI-u binding. Also test `prefix+f`. Record terminal/OS versions and whether each chord reaches Herdr.
+- Merge `examples/herdr.toml` into the disposable config. Check `cmd+p` using the Herdr binding. Also test `prefix+f`. Record terminal/OS versions and whether each chord reaches Herdr.
 - Change Herdr theme. Check legibility using terminal defaults, reverse selection, underline/bold matches, and dim help. Do not claim exact Herdr theme-token matching; there is no public theme object.
 - Run the same procedure on Linux before declaring Linux behavior verified.
 
