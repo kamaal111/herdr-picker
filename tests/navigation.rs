@@ -114,7 +114,7 @@ fn search_reset_and_resize_keep_selection_visible() {
     let mut app = app();
     app.navigate(100);
     app.ensure_visible(2);
-    assert_eq!(app.offset, 7);
+    assert_eq!(app.offset, 6);
     app.set_query("cod".into());
     app.ensure_visible(1);
     assert_eq!(app.offset, 0);
@@ -126,7 +126,7 @@ fn left_and_right_do_not_change_tree_state() {
     app.handle(key(KeyCode::Left));
     app.handle(key(KeyCode::Right));
     assert_eq!(app.selected, selected);
-    assert_eq!(app.rows.len(), 9);
+    assert_eq!(app.rows.len(), 8);
 }
 #[test]
 fn mouse_click_switches_the_visible_row() {
@@ -191,4 +191,20 @@ fn empty_session_has_no_selection_and_can_close() {
     assert_eq!(app.selected, None);
     assert_eq!(app.handle(key(KeyCode::Enter)), Action::Continue);
     assert_eq!(app.handle(key(KeyCode::Esc)), Action::Close);
+}
+
+#[test]
+fn single_tab_search_enter_and_click_focus_workspace() {
+    let mut app = app();
+    app.set_query("exact terminal".into());
+    assert_eq!(app.rows.len(), 1);
+    assert_eq!(
+        app.handle(key(KeyCode::Enter)),
+        Action::Switch(Target::Workspace("w3".into()))
+    );
+    app.results_area = Rect::new(0, 2, 40, 5);
+    assert_eq!(
+        app.handle(mouse(MouseEventKind::Down(MouseButton::Left), 2)),
+        Action::Switch(Target::Workspace("w3".into()))
+    );
 }

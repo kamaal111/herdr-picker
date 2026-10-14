@@ -116,6 +116,8 @@ case(b"col\x1b")
 case(b"\r", expected=[["workspace", "focus", "w1"]])
 case(b"codex\x0e\r", expected=[["tab", "focus", "w2:t7"]])
 case(b"server\r", mode="flat", expected=[["tab", "focus", "w2:t2"]])
+case(b"exact terminal\r", expected=[["workspace", "focus", "w3"]])
+case(b"exact terminal\r", mode="flat", expected=[["workspace", "focus", "w3"]])
 case(
     b"\r",
     failure="w1",
@@ -133,5 +135,5 @@ case(
     ],
 )
 print(
-    "7 PTY smoke scenarios passed (Escape including slow discovery, filtering, workspace/tab focus, flat mode, failure recovery; resize and terminal cleanup)"
+    "9 PTY smoke scenarios passed (Escape including slow discovery, filtering, workspace/tab focus, flat mode, failure recovery; resize and terminal cleanup)"
 )

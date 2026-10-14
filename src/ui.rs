@@ -185,7 +185,17 @@ fn row_line(row: &Row, flat: bool, width: usize, selected: bool) -> Line<'static
             remaining = remaining.saturating_sub(2);
         }
     }
-    spans.extend(label_spans(&row.label, &row.label_matches, remaining));
+    if let Some(tab) = &row.inline_tab
+        && remaining >= 5
+    {
+        let workspace_width = (remaining / 2).min(row.label.width());
+        spans.extend(label_spans(&row.label, &row.label_matches, workspace_width));
+        spans.push(Span::raw(" - "));
+        remaining = remaining.saturating_sub(workspace_width + 3);
+        spans.extend(label_spans(tab, &row.inline_tab_matches, remaining));
+    } else {
+        spans.extend(label_spans(&row.label, &row.label_matches, remaining));
+    }
     let style = if selected {
         Style::default().add_modifier(Modifier::REVERSED)
     } else {

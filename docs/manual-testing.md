@@ -16,7 +16,8 @@ Use a disposable Herdr session you control. These steps deliberately change focu
 - Verify `●` indicates the active workspace and tab, while `›`/reverse video indicates selection.
 - Confirm the current workspace is first, the remaining groups follow Herdr's numbered order, tabs follow UI order, and the initial selection is the first other workspace. This is the documented fallback, **not MRU**. Do not record an MRU test as passing.
 - Type immediately without focusing the input. Search `color codex`, noncontiguous abbreviations, mixed case, multiple terms, and nonsense. Both terms must match real names. Branch and path text must not produce results unless that same text appears in a name.
-- Search a workspace name: all its tabs appear. Search only a tab name: its parent remains selectable. Check the displayed count includes both workspace and tab rows.
+- Search a workspace name: all its tabs appear. Search only a tab name: its parent remains selectable. Check the displayed count includes both workspace and tab rows for multi-tab workspaces.
+- Include a workspace with exactly one tab. In both modes, verify one `Workspace - Tab` row, matching and highlights across both names, one result in the count, and workspace focus via Enter and click. Check narrow/Unicode labels remain readable. A multi-tab workspace filtered to one matching tab must keep its usual layout.
 - Navigate through every row with arrows and Ctrl+N/P. Left/right must neither hide nor expand rows. Type after scrolling; selection and scroll reset to the first result.
 - Press Enter with no results: nothing happens. Search with exactly one result: no focus changes until Enter.
 - Press Escape with a nonempty query: close immediately, retain the original workspace, tab, and pane. Reopen: query is empty.
