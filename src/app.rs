@@ -1,11 +1,14 @@
-use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind};
 use ratatui::layout::Rect;
+use terminal_input::event::{
+    Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
+};
 
 use crate::{
     config::SearchMode,
     model::{Snapshot, Target},
     ordering,
     search::{Row, Search},
+    theme::Theme,
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -23,6 +26,9 @@ pub struct App {
     pub offset: usize,
     pub results_area: Rect,
     pub mode: SearchMode,
+    pub ok_area: Rect,
+    pub cancel_area: Rect,
+    pub theme: Theme,
     search: Search,
 }
 
@@ -41,6 +47,9 @@ impl App {
             selected,
             offset: 0,
             results_area: Rect::default(),
+            ok_area: Rect::default(),
+            cancel_area: Rect::default(),
+            theme: Theme::default(),
             mode,
             search,
         }
@@ -87,6 +96,19 @@ impl App {
 
     pub fn handle(&mut self, event: Event) -> Action {
         match event {
+            Event::ThemeModeChanged(appearance) => self.theme.set_appearance(appearance),
+            Event::Mouse(mouse)
+                if mouse.kind == MouseEventKind::Down(MouseButton::Left)
+                    && self.cancel_area.contains((mouse.column, mouse.row).into()) =>
+            {
+                return Action::Close;
+            }
+            Event::Mouse(mouse)
+                if mouse.kind == MouseEventKind::Down(MouseButton::Left)
+                    && self.ok_area.contains((mouse.column, mouse.row).into()) =>
+            {
+                return self.activate();
+            }
             Event::Key(key) if key.kind != KeyEventKind::Release => {
                 let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
                 match key.code {

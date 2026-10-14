@@ -4,4 +4,5 @@ pub mod config;
 pub mod model;
 pub mod ordering;
 pub mod search;
+pub mod theme;
 pub mod ui;

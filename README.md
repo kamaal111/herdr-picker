@@ -8,7 +8,9 @@ A small, on-demand Rust plugin that fuzzy-finds **open Herdr workspaces, worktre
     ColorPicker
 ›     Codex
 
- ↑↓/Ctrl+P,N Navigate   Enter Switch   Esc Close
+ ↑↓/Ctrl+P,N Navigate
+
+                  ↵ OK    Esc Cancel
 ```
 
 Herdr's built-in sidebar and navigation keys move through its existing UI. This plugin adds one searchable palette containing selectable workspace rows and individual tab destinations, including matching across both names.
@@ -144,14 +146,40 @@ Changing the query immediately selects the first result in the current mode's or
 | Typing / paste | Filter immediately |
 | ↑ / Ctrl+P | Previous row |
 | ↓ / Ctrl+N | Next row |
-| Enter | Focus selected workspace or tab and exit |
-| Esc / Ctrl+C | Exit without switching |
+| Enter / click ↵ OK | Focus selected workspace or tab and exit |
+| Esc / Ctrl+C / click Esc Cancel | Exit without switching |
 | Left click | Focus clicked result and exit |
 | Mouse wheel | Move selection and scroll results |
 
-Navigation stops at the first/last row. Arrow left/right have no tree behavior. Empty results show “No matching results”; Enter does nothing. Every invocation starts with an empty query. `●` marks the currently active workspace/tab; `›` and reverse video mark selection. Matches are bold and underlined, including on selected rows. Labels stay on one line and truncate with `…`.
+Navigation stops at the first/last row. Arrow left/right have no tree behavior. Empty results show “No matching results”; Enter does nothing. Every invocation starts with an empty query. `●` marks the currently active workspace/tab; `›` and the theme accent background mark selection. Matches are bold and underlined, including on selected rows. Labels stay on one line and truncate with `…`.
 
 The centered popup is 80% wide and at most 22 outer rows, clamped by Herdr to the terminal size. All results remain reachable by scrolling. The terminal UI responds to resize; extremely small areas retain Escape guidance. It requests terminal mouse reporting; Herdr 0.9.5 source forwards popup mouse events. Enable Herdr's mouse capture if the outer terminal otherwise handles clicks.
+
+## Theme and footer buttons
+
+The picker reads Herdr's saved theme configuration on each opening. It follows
+`HERDR_CONFIG_PATH`, then `XDG_CONFIG_HOME/herdr/config.toml`, then
+`~/.config/herdr/config.toml`. No picker theme configuration is needed.
+
+All Herdr 0.9.5 built-in themes, aliases, `[theme.custom]` colors, and legacy
+`ui.accent` overrides are supported. The panel, text, selection, hints, and
+buttons use those colors. The bottom-centered buttons have a blank row above them. The `↵ OK`
+button performs the same action as Enter; `Esc Cancel` exits without switching. OK is disabled while loading or
+when no result is selected. Narrow popups show only Cancel; Enter still works.
+
+With `theme.auto_switch = true`, the picker queries the popup terminal's
+light/dark appearance and follows appearance updates while open. It applies
+`dark_name` / `light_name` (or Herdr's sibling defaults), followed by shared
+custom colors and the active `[theme.custom.dark]` / `[theme.custom.light]`
+overrides. Without an appearance report, it uses Herdr's dark fallback and
+remains fully interactive. The `terminal` theme preserves default colors.
+
+Saved config changes take effect next time the picker opens. Unsaved Settings
+previews are not available to the plugin. Missing config uses Catppuccin;
+invalid config/theme names use fallback colors and report a diagnostic.
+Palette compatibility is pinned to the inspected Herdr 0.9.5 source; future
+Herdr palette changes may require updating the plugin. Outside clicks are
+ignored by Herdr 0.9.5; use Cancel to close with the mouse.
 
 ## Development
 
@@ -201,7 +229,8 @@ src/search.rs         Fuzzy terms, highlights, hierarchical/flat results
 src/ordering.rs       Explicit ordering and initial-selection fallback
 src/app.rs            Selection, scrolling, keyboard/mouse state
 src/ui.rs             Rendering and terminal lifecycle
-src/config.rs         Strict TOML configuration
+src/config.rs         Strict picker TOML configuration
+src/theme.rs          Herdr palette, config resolution, light/dark rules
 src/main.rs           Entrypoints and error reporting/recovery
 tests/                Search, navigation, API, render, and PTY tests
 docs/                 Feasibility evidence and manual test procedure
@@ -218,14 +247,15 @@ examples/             Herdr and picker configuration
 - **Destination closed after opening:** the server rejects the stale ID; the picker exits, attempts to restore the original tab/workspace, and reports an error through Herdr notifications and stderr. There is no refresh loop. Reopen for a new snapshot.
 - **No visible error toast:** Herdr's `[ui.toast]` settings control notification delivery. If the notification API also fails, stderr contains both errors. CLI actions are logged by Herdr; popup stderr is terminal output and may disappear on exit.
 - **Mouse unavailable:** check Herdr/terminal mouse capture and use keyboard navigation. A terminal modifier used to bypass mouse reporting intentionally prevents delivery to the popup.
-- **Colors differ from Herdr chrome:** no theme object is exported to plugins. Default terminal colors and text attributes are the fallback; no theme file is parsed or overwritten.
+- **Colors differ from Herdr chrome:** reopen after saving Herdr Settings. Verify `HERDR_CONFIG_PATH` and custom overrides. The plugin reads saved configuration rather than unsaved previews; appearance reports depend on the host terminal. Palette definitions match Herdr 0.9.5.
 
 ## Known limitations and verification status
 
-True session MRU, previous-workspace preselection, top alignment, and a plugin theme object are unavailable through the chosen public API surface. No persistent MRU file or background listener is used. Branch display is omitted because the single snapshot lacks branch data: `worktree.list` could enrich it using extra repository discovery calls, but this release intentionally does not make those calls. That is an implementation tradeoff, not a claim that Herdr cannot report branches at all.
+True session MRU, previous-workspace preselection, top alignment, and a plugin theme object are unavailable through the chosen public API surface. Theme matching instead reads Herdr's saved configuration and resolves its documented theme choices locally. No persistent MRU file or background listener is used. Branch display is omitted because the single snapshot lacks branch data: `worktree.list` could enrich it using extra repository discovery calls, but this release intentionally does not make those calls. That is an implementation tradeoff, not a claim that Herdr cannot report branches at all.
 
 Only the local selected Herdr session is covered; this release does not aggregate machines or sessions. Unknown response fields are ignored, while missing/duplicate IDs and broken parent relationships are rejected. Focus uses stable public IDs and preserves remembered tab/pane context through Herdr's focus methods. A focus failure triggers best-effort restoration; if the original destination also closed or the server is unavailable, restoration cannot be guaranteed.
 
 macOS builds, automated tests, PTY behavior, and live snapshot parsing were verified during development. Linux is configured in CI but was not executed locally. Actual popup installation/launch, live workspace/tab switching, active-pane preservation, and mouse delivery still require the documented manual test. No repository has been published, and no user shortcuts or terminal configuration have been changed.
 
-MIT licensed. Once published, maintainers can add the GitHub topic `herdr-plugin` for Herdr's community plugin index.
+Project code is MIT licensed; adapted Herdr palette code is Apache-2.0 licensed
+with attribution in `src/theme.rs` and `LICENSES/Herdr-Apache-2.0.txt`. Once published, maintainers can add the GitHub topic `herdr-plugin` for Herdr's community plugin index.

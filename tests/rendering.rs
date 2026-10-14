@@ -33,7 +33,11 @@ fn normal_palette_contains_input_count_results_and_help() {
     assert!(rendered.contains("Search workspaces, worktrees and tabs"));
     assert!(rendered.contains("8 results"));
     assert!(rendered.contains("ColorPicker"));
-    assert!(rendered.contains("Esc Close"));
+    assert!(rendered.contains("Navigate"));
+    assert!(rendered.contains("↵ OK"));
+    assert!(rendered.contains("Esc Cancel"));
+    assert!(!rendered.contains("Enter Switch"));
+    assert!(!rendered.contains("Esc Close"));
 }
 #[test]
 fn tiny_terminal_has_escape_guidance() {
@@ -113,10 +117,13 @@ fn inline_row_highlights_both_names_and_keeps_active_selection() {
             .modifier
             .contains(ratatui::style::Modifier::UNDERLINED)
     );
-    assert!(
-        buffer[(15, 2)]
-            .modifier
-            .contains(ratatui::style::Modifier::REVERSED)
+    assert_eq!(
+        buffer[(15, 2)].bg,
+        herdr_picker::theme::Palette::catppuccin().accent
+    );
+    assert_eq!(
+        buffer[(15, 2)].fg,
+        herdr_picker::theme::Palette::catppuccin().panel_bg
     );
 }
 
@@ -228,4 +235,78 @@ fn nested_unicode_breadcrumb_truncates_by_terminal_cells() {
             .modifier
             .contains(ratatui::style::Modifier::UNDERLINED)
     );
+}
+
+fn themed_draw(width: u16, height: u16, query: &str) -> (App, ratatui::buffer::Buffer) {
+    let mut app = App::new(
+        parse_snapshot(include_bytes!("fixtures/snapshot.json")).unwrap(),
+        SearchMode::Hierarchical,
+    );
+    app.theme = herdr_picker::theme::Theme::parse("[theme]\nname = 'dracula'").unwrap();
+    app.set_query(query.into());
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+    terminal.draw(|frame| render(frame, &mut app)).unwrap();
+    (app, terminal.backend().buffer().clone())
+}
+
+#[test]
+fn dracula_colors_fill_panel_selection_hints_and_buttons() {
+    let (app, buffer) = themed_draw(80, 20, "color");
+    let palette = app.theme.palette();
+    assert_eq!(buffer[(79, 10)].bg, palette.panel_bg);
+    assert_eq!(buffer[(0, 0)].fg, palette.text);
+    assert_eq!(buffer[(0, 2)].bg, palette.accent);
+    assert_eq!(buffer[(0, 2)].fg, palette.panel_bg);
+    assert_eq!(buffer[(1, 17)].fg, palette.overlay1);
+    assert_eq!(buffer[(30, 19)].bg, palette.accent);
+    assert_eq!(buffer[(33, 19)].symbol(), "O");
+    assert_eq!(buffer[(38, 19)].bg, palette.surface0);
+    assert_eq!(buffer[(38, 19)].fg, palette.text);
+    let footer: String = (30..50).map(|x| buffer[(x, 19)].symbol()).collect();
+    assert_eq!(footer, " ↵ OK    Esc Cancel ");
+    let padding: String = (0..80).map(|x| buffer[(x, 18)].symbol()).collect();
+    assert_eq!(padding, " ".repeat(80));
+    assert_eq!(app.ok_area.x, 30);
+    assert_eq!(app.cancel_area.right(), 50);
+    assert_eq!(buffer[(29, 19)].bg, palette.panel_bg);
+    assert_eq!(buffer[(50, 19)].bg, palette.panel_bg);
+}
+
+#[test]
+fn empty_results_use_disabled_ok_style() {
+    let (app, buffer) = themed_draw(80, 20, "nonexistenttttt");
+    let palette = app.theme.palette();
+    assert_eq!(buffer[(30, 19)].bg, palette.surface0);
+    assert_eq!(buffer[(30, 19)].fg, palette.overlay0);
+    assert_eq!(buffer[(38, 19)].fg, palette.text);
+}
+
+#[test]
+fn compact_footer_shows_cancel_and_tiny_resize_clears_hits() {
+    let (mut app, buffer) = themed_draw(14, 10, "");
+    assert_eq!(app.ok_area, ratatui::layout::Rect::default());
+    assert_eq!(app.cancel_area, ratatui::layout::Rect::new(3, 9, 8, 1));
+    let footer: String = (0..14).map(|x| buffer[(x, 9)].symbol()).collect();
+    assert_eq!(footer, "    Cancel    ");
+    let mut terminal = Terminal::new(TestBackend::new(6, 1)).unwrap();
+    terminal.draw(|frame| render(frame, &mut app)).unwrap();
+    assert_eq!(app.cancel_area, ratatui::layout::Rect::default());
+    assert_eq!(app.results_area, ratatui::layout::Rect::default());
+}
+
+#[test]
+fn loading_panel_uses_shared_footer_with_disabled_ok() {
+    let palette = herdr_picker::theme::Palette::dracula();
+    let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
+    let mut cancel = ratatui::layout::Rect::default();
+    terminal
+        .draw(|frame| cancel = herdr_picker::ui::render_loading(frame, palette))
+        .unwrap();
+    assert_eq!(cancel, ratatui::layout::Rect::new(38, 19, 12, 1));
+    let buffer = terminal.backend().buffer();
+    assert_eq!(buffer[(79, 10)].bg, palette.panel_bg);
+    assert_eq!(buffer[(30, 19)].fg, palette.overlay0);
+    assert_eq!(buffer[(38, 19)].bg, palette.surface0);
+    let padding: String = (0..80).map(|x| buffer[(x, 18)].symbol()).collect();
+    assert_eq!(padding, " ".repeat(80));
 }

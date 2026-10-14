@@ -166,11 +166,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
+name = "helix-crossterm"
+version = "0.1.0-beta.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8938f95c101672e5084b377daac1f78ed5964c2a75046fc0d29d66cbed975f8c"
+dependencies = [
+ "bitflags",
+ "crossterm_winapi",
+ "mio",
+ "parking_lot",
+ "rustix",
+ "signal-hook",
+ "signal-hook-mio",
+ "winapi",
+]
+
+[[package]]
 name = "herdr-picker"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "crossterm",
+ "helix-crossterm",
  "nucleo-matcher",
  "ratatui",
  "serde",

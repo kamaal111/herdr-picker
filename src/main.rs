@@ -1,7 +1,7 @@
 use std::{env, path::PathBuf};
 
 use anyhow::{Context, Result, bail};
-use herdr_picker::{api::Herdr, config::Config, ui};
+use herdr_picker::{api::Herdr, config::Config, theme::Theme, ui};
 
 fn run(api: &Herdr) -> Result<()> {
     match env::args().nth(1).as_deref() {
@@ -21,7 +21,11 @@ fn run(api: &Herdr) -> Result<()> {
                     .context("launch pick through the Herdr plugin popup")?,
             );
             let config = Config::load(&directory)?;
-            if let Some((snapshot, target)) = ui::run(api, config.search_mode)? {
+            let (theme, diagnostics) = Theme::load();
+            for diagnostic in diagnostics {
+                eprintln!("Herdr Picker: {diagnostic}");
+            }
+            if let Some((snapshot, target)) = ui::run(api, config.search_mode, theme)? {
                 // One focus request validates the target before changing context. Herdr's
                 // tab.focus also focuses its parent; no partially completed two-step switch.
                 if let Err(error) = api.focus(&target) {

@@ -13,7 +13,7 @@ Use a disposable Herdr session you control. These steps deliberately change focu
 ## Discovery, cancellation, and selection
 
 - Confirm all open workspaces and tabs are present, including the opened worktree, and the unopened checkout is absent.
-- Verify `●` indicates the active workspace and tab, while `›`/reverse video indicates selection.
+- Verify `●` indicates the active workspace and tab, while `›`/accent background indicates selection.
 - Confirm the current workspace's group is first, the remaining groups follow root workspace numbered order, root tabs precede worktrees, worktrees and tabs follow UI order, and the initial selection is the first other workspace. This is the documented fallback, **not MRU**. Do not record an MRU test as passing.
 - Type immediately without focusing the input. Search `color codex`, noncontiguous abbreviations, mixed case, multiple terms, and nonsense. Both terms must match real names. Branch and path text must not produce results unless that same text appears in a name.
 - Search a root workspace name: all its worktrees and tabs appear. Search a worktree name: its tabs appear with its selectable root. Search only a tab name: all its ancestors remain selectable. Search terms spanning root, worktree, and tab names. Check the displayed count includes both workspace and tab rows for multi-tab workspaces.
@@ -23,6 +23,8 @@ Use a disposable Herdr session you control. These steps deliberately change focu
 - Press Enter with no results: nothing happens. Search with exactly one result: no focus changes until Enter.
 - Press Escape with a nonempty query: close immediately, retain the original workspace, tab, and pane. Reopen: query is empty.
 - Click root, worktree, and tab rows, scroll with the wheel, then resume keyboard navigation. Verify coordinate translation in the actual host popup.
+- Confirm the button group is centered at the bottom with a blank row above it, including after resizing. Navigation hints should not repeat Enter or Escape instructions. Navigate to a result and click `↵ OK`: verify the same destination as Enter. Click `Esc Cancel`: close without changing workspace, tab, or pane. Click OK with no results: do nothing. Right clicks, releases, and the gap between buttons must do nothing.
+- Check Cancel during slow discovery. OK remains disabled while loading. Resize while open: clicks must follow the newly drawn buttons. Below 20 columns only compact Cancel is shown; tiny areas retain Escape guidance.
 - Resize to a small terminal and then enlarge it. All results must remain reachable, labels must remain on one line, and full labels must still match after truncation.
 
 ## Focus and cleanup
@@ -39,7 +41,9 @@ Use a disposable Herdr session you control. These steps deliberately change focu
 
 - Put `search_mode = "flat"` in the plugin config directory. Reopen and check `workspace / tab` and `workspace / worktree / tab` labels, independent selectable workspace results, relevance ranking, and matching highlights across all ancestor and destination labels. Invalid values must report errors. Restore the intended mode afterward.
 - Merge `examples/herdr.toml` into the disposable config. Check `cmd+p` using the Herdr binding. Also test `prefix+f`. Record terminal/OS versions and whether each chord reaches Herdr.
-- Change Herdr theme. Check legibility using terminal defaults, reverse selection, underline/bold matches, and dim help. Do not claim exact Herdr theme-token matching; there is no public theme object.
+- Compare the picker with Settings under saved Dracula, a light theme, and custom accent/background/text overrides. Verify the entire panel, selection, hints, and both buttons match the configured palette; selected match emphasis remains readable.
+- Enable automatic light/dark switching and change the host appearance while the picker is open. Verify the corresponding configured theme and mode overrides apply without resetting search or selection. Check a host without appearance reporting retains the dark fallback and remains responsive.
+- Confirm the `terminal` theme retains terminal defaults. Check saved config changes apply on reopening; unsaved Settings previews need not match.
 - Run the same procedure on Linux before declaring Linux behavior verified.
 
 ## Release evidence

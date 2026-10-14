@@ -1,5 +1,5 @@
 use std::{
-    io::{self, Stdout},
+    io::{self, Stdout, Write},
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc::{self, Receiver, TryRecvError},
@@ -10,12 +10,9 @@ use std::{
 
 use anyhow::Result;
 use crossterm::{
-    event::{
-        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
-        Event, KeyCode, KeyEventKind, KeyModifiers,
-    },
+    event::{DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture},
     execute,
-    terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{
     Frame, Terminal,
@@ -25,6 +22,10 @@ use ratatui::{
     text::{Line, Span},
     widgets::Paragraph,
 };
+use terminal_input::{
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind},
+    terminal,
+};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::{
@@ -33,20 +34,30 @@ use crate::{
     config::SearchMode,
     model::{Snapshot, Target},
     search::Row,
+    theme::{Palette, Theme},
 };
 
-struct Screen;
+struct Screen {
+    appearance_reporting: bool,
+}
 
 impl Screen {
-    fn enter() -> Result<(Self, Terminal<CrosstermBackend<Stdout>>)> {
+    fn enter(appearance_reporting: bool) -> Result<(Self, Terminal<CrosstermBackend<Stdout>>)> {
         terminal::enable_raw_mode()?;
-        let guard = Self;
+        let guard = Self {
+            appearance_reporting,
+        };
         execute!(
             io::stdout(),
             EnterAlternateScreen,
             EnableMouseCapture,
             EnableBracketedPaste
         )?;
+        if appearance_reporting {
+            let mut stdout = io::stdout();
+            stdout.write_all(b"\x1b[?2031h\x1b[?996n")?;
+            stdout.flush()?;
+        }
         let terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
         Ok((guard, terminal))
     }
@@ -54,6 +65,9 @@ impl Screen {
 
 impl Drop for Screen {
     fn drop(&mut self) {
+        if self.appearance_reporting {
+            let _ = io::stdout().write_all(b"\x1b[?2031l");
+        }
         let _ = execute!(
             io::stdout(),
             DisableBracketedPaste,
@@ -68,6 +82,7 @@ impl Drop for Screen {
 fn wait_for_snapshot(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     receiver: &Receiver<Result<Snapshot>>,
+    theme: &mut Theme,
 ) -> Result<Option<(Snapshot, Vec<Event>)>> {
     let mut pending = Vec::new();
     loop {
@@ -78,11 +93,9 @@ fn wait_for_snapshot(
             }
             Err(TryRecvError::Empty) => {}
         }
+        let mut cancel_area = Rect::default();
         terminal.draw(|frame| {
-            frame.render_widget(
-                Paragraph::new("Loading workspaces, worktrees and tabs…  Esc Close"),
-                frame.area(),
-            )
+            cancel_area = render_loading(frame, theme.palette());
         })?;
         if event::poll(Duration::from_millis(20))? {
             let event = event::read()?;
@@ -94,6 +107,15 @@ fn wait_for_snapshot(
             {
                 return Ok(None);
             }
+            if let Event::Mouse(mouse) = event
+                && mouse.kind == MouseEventKind::Down(MouseButton::Left)
+                && cancel_area.contains((mouse.column, mouse.row).into())
+            {
+                return Ok(None);
+            }
+            if let Event::ThemeModeChanged(appearance) = event {
+                theme.set_appearance(appearance);
+            }
             if matches!(event, Event::Key(_) | Event::Paste(_)) {
                 pending.push(event);
             }
@@ -101,8 +123,8 @@ fn wait_for_snapshot(
     }
 }
 
-pub fn run(api: &Herdr, mode: SearchMode) -> Result<Option<(Snapshot, Target)>> {
-    let (_screen, mut terminal) = Screen::enter()?;
+pub fn run(api: &Herdr, mode: SearchMode, mut theme: Theme) -> Result<Option<(Snapshot, Target)>> {
+    let (_screen, mut terminal) = Screen::enter(theme.auto_switch())?;
     let cancelled = AtomicBool::new(false);
     let loaded = thread::scope(|scope| {
         let (sender, receiver) = mpsc::channel();
@@ -110,7 +132,7 @@ pub fn run(api: &Herdr, mode: SearchMode) -> Result<Option<(Snapshot, Target)>> 
         scope.spawn(move || {
             let _ = sender.send(api.snapshot_cancellable(cancellation));
         });
-        let result = wait_for_snapshot(&mut terminal, &receiver);
+        let result = wait_for_snapshot(&mut terminal, &receiver, &mut theme);
         cancelled.store(true, Ordering::Relaxed);
         result
     })?;
@@ -118,6 +140,7 @@ pub fn run(api: &Herdr, mode: SearchMode) -> Result<Option<(Snapshot, Target)>> 
         return Ok(None);
     };
     let mut app = App::new(snapshot, mode);
+    app.theme = theme;
     for event in pending {
         match app.handle(event) {
             Action::Close => return Ok(None),
@@ -165,7 +188,13 @@ pub fn label_spans(label: &str, matches: &[usize], width: usize) -> Vec<Span<'st
     spans
 }
 
-fn row_line(row: &Row, flat: bool, width: usize, selected: bool) -> Line<'static> {
+fn row_line(
+    row: &Row,
+    flat: bool,
+    width: usize,
+    selected: bool,
+    palette: Palette,
+) -> Line<'static> {
     let prefix = format!(
         "{}{} ",
         if selected { '›' } else { ' ' },
@@ -205,24 +234,33 @@ fn row_line(row: &Row, flat: bool, width: usize, selected: bool) -> Line<'static
         spans.extend(label_spans(&row.label, &row.label_matches, remaining));
     }
     let style = if selected {
-        Style::default().add_modifier(Modifier::REVERSED)
+        palette.primary_style()
     } else {
-        Style::default()
+        palette.base_style()
     };
     Line::from(spans).style(style)
 }
 
 pub fn render(frame: &mut Frame<'_>, app: &mut App) {
     let area = frame.area();
-    if area.width < 8 || area.height < 3 {
+    let palette = app.theme.palette();
+    frame.render_widget(Paragraph::new("").style(palette.base_style()), area);
+    app.ok_area = Rect::default();
+    app.cancel_area = Rect::default();
+    if area.width < 8 || area.height < 6 {
         app.results_area = Rect::default();
-        frame.render_widget(Paragraph::new("Esc closes"), area);
+        frame.render_widget(
+            Paragraph::new("Esc closes").style(palette.base_style()),
+            area,
+        );
         return;
     }
     let chunks = Layout::vertical([
         Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Min(0),
+        Constraint::Length(1),
+        Constraint::Length(1),
         Constraint::Length(1),
     ])
     .split(area);
@@ -243,18 +281,24 @@ pub fn render(frame: &mut Frame<'_>, app: &mut App) {
     ));
     header.push(Span::styled(
         count,
-        Style::default().add_modifier(Modifier::DIM),
+        palette.base_style().fg(palette.overlay0),
     ));
-    frame.render_widget(Paragraph::new(Line::from(header)), chunks[0]);
+    frame.render_widget(
+        Paragraph::new(Line::from(header)).style(palette.base_style()),
+        chunks[0],
+    );
     frame.render_widget(
         Paragraph::new("─".repeat(usize::from(area.width)))
-            .style(Style::default().add_modifier(Modifier::DIM)),
+            .style(palette.base_style().fg(palette.overlay0)),
         chunks[1],
     );
     app.results_area = chunks[2];
     app.ensure_visible(usize::from(chunks[2].height));
     if app.rows.is_empty() {
-        frame.render_widget(Paragraph::new("No matching results"), chunks[2]);
+        frame.render_widget(
+            Paragraph::new("No matching results").style(palette.base_style().fg(palette.subtext0)),
+            chunks[2],
+        );
     } else {
         let lines: Vec<_> = app
             .rows
@@ -268,24 +312,24 @@ pub fn render(frame: &mut Frame<'_>, app: &mut App) {
                     app.mode == SearchMode::Flat,
                     usize::from(area.width),
                     app.selected == Some(i),
+                    palette,
                 )
             })
             .collect();
-        frame.render_widget(Paragraph::new(lines), chunks[2]);
+        frame.render_widget(Paragraph::new(lines).style(palette.base_style()), chunks[2]);
     }
     let position = app.selected.map(|i| i + 1).unwrap_or(0);
     let help = if area.width >= 65 {
-        format!(
-            " ↑↓/Ctrl+P,N Navigate  Enter Switch  Esc Close  {position}/{}",
-            app.rows.len()
-        )
+        format!(" ↑↓/Ctrl+P,N Navigate  {position}/{}", app.rows.len())
     } else {
-        format!(" ↑↓ Move  Enter Switch  Esc Close  {position}")
+        format!(" ↑↓ Move  {position}/{}", app.rows.len())
     };
     frame.render_widget(
-        Paragraph::new(help).style(Style::default().add_modifier(Modifier::DIM)),
+        Paragraph::new(help).style(palette.base_style().fg(palette.overlay1)),
         chunks[3],
     );
+    (app.ok_area, app.cancel_area) =
+        render_actions(frame, chunks[5], palette, app.selected.is_some());
     let cursor_x = (chunks[0].x
         + 2
         + if app.query.is_empty() {
@@ -295,4 +339,62 @@ pub fn render(frame: &mut Frame<'_>, app: &mut App) {
         })
     .min(area.right().saturating_sub(1));
     frame.set_cursor_position((cursor_x, chunks[0].y));
+}
+
+fn render_actions(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    palette: Palette,
+    enabled: bool,
+) -> (Rect, Rect) {
+    if area.height == 0 || area.width < 8 {
+        return (Rect::default(), Rect::default());
+    }
+    let group_width = if area.width >= 20 { 20 } else { 8 };
+    let left = area.x + (area.width - group_width) / 2;
+    let (ok, cancel, label) = if area.width >= 20 {
+        (
+            Rect::new(left, area.y, 6, 1),
+            Rect::new(left + 8, area.y, 12, 1),
+            " Esc Cancel ",
+        )
+    } else {
+        (Rect::default(), Rect::new(left, area.y, 8, 1), " Cancel ")
+    };
+    if ok.width > 0 {
+        let style = if enabled {
+            palette.primary_style()
+        } else {
+            palette.secondary_style().fg(palette.overlay0)
+        };
+        frame.render_widget(Paragraph::new(" ↵ OK ").style(style), ok);
+    }
+    frame.render_widget(
+        Paragraph::new(label).style(palette.secondary_style()),
+        cancel,
+    );
+    (ok, cancel)
+}
+
+pub fn render_loading(frame: &mut Frame<'_>, palette: Palette) -> Rect {
+    let area = frame.area();
+    frame.render_widget(Paragraph::new("").style(palette.base_style()), area);
+    if area.width < 8 || area.height < 6 {
+        frame.render_widget(
+            Paragraph::new("Esc closes").style(palette.base_style()),
+            area,
+        );
+        return Rect::default();
+    }
+    frame.render_widget(
+        Paragraph::new("Loading workspaces, worktrees and tabs…").style(palette.base_style()),
+        Rect::new(area.x, area.y, area.width, area.height - 2),
+    );
+    render_actions(
+        frame,
+        Rect::new(area.x, area.bottom() - 1, area.width, 1),
+        palette,
+        false,
+    )
+    .1
 }
