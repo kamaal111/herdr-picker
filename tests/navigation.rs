@@ -162,6 +162,7 @@ fn single_workspace_fallback_selects_its_workspace_row() {
             label: "Only".into(),
             number: 1,
             active_tab_id: "w1:t1".into(),
+            worktree: None,
         }],
         tabs: vec![herdr_picker::model::Tab {
             tab_id: "w1:t1".into(),
@@ -206,5 +207,78 @@ fn single_tab_search_enter_and_click_focus_workspace() {
     assert_eq!(
         app.handle(mouse(MouseEventKind::Down(MouseButton::Left), 2)),
         Action::Switch(Target::Workspace("w3".into()))
+    );
+}
+
+fn worktree_app() -> App {
+    App::new(
+        parse_snapshot(include_bytes!("fixtures/worktrees.json")).unwrap(),
+        SearchMode::Hierarchical,
+    )
+}
+
+#[test]
+fn focused_worktree_group_starts_with_root_without_marking_root_active() {
+    let app = worktree_app();
+    assert_eq!(app.rows[0].target, Target::Workspace("w1".into()));
+    assert!(!app.rows[0].active);
+    let active: Vec<_> = app
+        .rows
+        .iter()
+        .filter(|row| row.active)
+        .map(|row| row.target.clone())
+        .collect();
+    assert_eq!(active, vec![Target::Workspace("w4".into())]);
+}
+
+#[test]
+fn worktree_enter_focuses_actual_workspace_and_nested_tab_enter_focuses_tab() {
+    let mut app = worktree_app();
+    app.set_query("multimachine codex".into());
+    app.handle(key(KeyCode::Down));
+    assert_eq!(
+        app.handle(key(KeyCode::Enter)),
+        Action::Switch(Target::Workspace("w2".into()))
+    );
+    app.handle(key(KeyCode::Down));
+    assert_eq!(
+        app.handle(key(KeyCode::Enter)),
+        Action::Switch(Target::Tab("w2:t1".into()))
+    );
+}
+
+#[test]
+fn nested_worktree_and_tab_mouse_clicks_focus_actual_ids() {
+    let mut app = worktree_app();
+    app.set_query("multimachine codex".into());
+    app.results_area = Rect::new(0, 2, 60, 5);
+    assert_eq!(
+        app.handle(mouse(MouseEventKind::Down(MouseButton::Left), 3)),
+        Action::Switch(Target::Workspace("w2".into()))
+    );
+    assert_eq!(
+        app.handle(mouse(MouseEventKind::Down(MouseButton::Left), 4)),
+        Action::Switch(Target::Tab("w2:t1".into()))
+    );
+}
+
+#[test]
+fn nested_rows_remain_reachable_after_scrolling_and_query_reset() {
+    let mut app = worktree_app();
+    assert_eq!(app.selected, Some(0));
+    app.navigate(10);
+    app.ensure_visible(2);
+    assert_eq!(app.offset, 9);
+    assert_eq!(
+        app.handle(key(KeyCode::Enter)),
+        Action::Switch(Target::Tab("w5:t2".into()))
+    );
+    app.set_query("just terminal".into());
+    assert_eq!(app.selected, Some(0));
+    assert_eq!(app.offset, 0);
+    app.navigate(1);
+    assert_eq!(
+        app.handle(key(KeyCode::Enter)),
+        Action::Switch(Target::Workspace("w4".into()))
     );
 }

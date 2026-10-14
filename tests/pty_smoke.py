@@ -50,7 +50,13 @@ def read_until(fd, needle):
 
 
 def case(
-    keys, mode="hierarchical", failure="", expected=(), exit_code=0, loading=False
+    keys,
+    mode="hierarchical",
+    failure="",
+    expected=(),
+    exit_code=0,
+    loading=False,
+    fixture=FIXTURE,
 ):
     with tempfile.TemporaryDirectory(prefix="herdr-picker-pty-") as directory:
         directory = Path(directory)
@@ -67,7 +73,7 @@ def case(
             HERDR_BIN_PATH=str(fake),
             HERDR_PLUGIN_CONFIG_DIR=str(directory),
             PICKER_TEST_LOG=str(log),
-            PICKER_TEST_FIXTURE=str(FIXTURE),
+            PICKER_TEST_FIXTURE=str(fixture),
             PICKER_TEST_FAIL=failure,
             TERM="xterm-256color",
             PICKER_TEST_WAIT="1" if loading else "",
@@ -134,6 +140,23 @@ case(
         ],
     ],
 )
+WORKTREE_FIXTURE = ROOT / "tests/fixtures/worktrees.json"
+case(
+    b"herdr-picker multimachine codex\x0e\x0e\r",
+    fixture=WORKTREE_FIXTURE,
+    expected=[["tab", "focus", "w2:t1"]],
+)
+case(
+    b"herdr-picker just terminal\x0e\r",
+    fixture=WORKTREE_FIXTURE,
+    expected=[["workspace", "focus", "w4"]],
+)
+case(
+    b"herdr-picker multimachine codex\r",
+    mode="flat",
+    fixture=WORKTREE_FIXTURE,
+    expected=[["tab", "focus", "w2:t1"]],
+)
 print(
-    "9 PTY smoke scenarios passed (Escape including slow discovery, filtering, workspace/tab focus, flat mode, failure recovery; resize and terminal cleanup)"
+    "12 PTY smoke scenarios passed (Escape including slow discovery, filtering, workspace/tab focus, nested worktrees, flat mode, failure recovery; resize and terminal cleanup)"
 )

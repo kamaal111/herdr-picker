@@ -1,6 +1,6 @@
 # herdr-picker
 
-A small, on-demand Rust plugin that fuzzy-finds **open Herdr workspaces and tabs**. Type immediately, move with the keyboard, and press Enter to focus a destination. Opened worktrees behave like any other workspace. Nothing is created or closed.
+A small, on-demand Rust plugin that fuzzy-finds **open Herdr workspaces, worktrees, and tabs**. Type immediately, move with the keyboard, and press Enter to focus a destination. Opened worktrees are nested beneath their root workspace. Nothing is created or closed.
 
 ```text
 > color codex                                      2 results
@@ -13,7 +13,7 @@ A small, on-demand Rust plugin that fuzzy-finds **open Herdr workspaces and tabs
 
 Herdr's built-in sidebar and navigation keys move through its existing UI. This plugin adds one searchable palette containing selectable workspace rows and individual tab destinations, including matching across both names.
 
-**Current limits:** Herdr 0.9.5 popups are centered, and its snapshot does not contain MRU history. This release orders the current workspace first, followed by Herdr's workspace UI order, and initially selects the first other workspace. It cannot promise `Cmd+P → Enter` returns to the previously visited workspace. Branch labels are omitted. These differences, the alternatives investigated, and source references are detailed in [API feasibility](docs/api-research.md).
+**Current limits:** Herdr 0.9.5 popups are centered, and its snapshot does not contain MRU history. This release orders the group containing the current workspace first, followed by Herdr's root workspace UI order, and initially selects the first other workspace. It cannot promise `Cmd+P → Enter` returns to the previously visited workspace. Branch labels are omitted. These differences, the alternatives investigated, and source references are detailed in [API feasibility](docs/api-research.md).
 
 ## Requirements and installation
 
@@ -80,7 +80,7 @@ Add the following to your existing Herdr configuration (normally `~/.config/herd
 key = "cmd+p"
 type = "plugin_action"
 command = "herdr-picker.open"
-description = "Search workspaces and tabs"
+description = "Search workspaces, worktrees and tabs"
 ```
 
 `cmd+p` is the desired default binding, supplied as an example because plugins cannot register a default shortcut in their manifest. Herdr owns the shortcut; there is no redundant `shortcut` field in the plugin's config. Change `key` to configure it. Remove any conflicting binding for the same chord. Reload with `herdr server reload-config` where supported, or reattach Herdr to load the config.
@@ -92,7 +92,7 @@ A reliable fallback is your Herdr prefix followed by `f`:
 key = "prefix+f"
 type = "plugin_action"
 command = "herdr-picker.open"
-description = "Search workspaces and tabs"
+description = "Search workspaces, worktrees and tabs"
 ```
 
 Use Herdr's configured prefix (the factory default is `Ctrl+B`), then `f`. If your terminal intercepts Cmd+P, use this fallback or choose another Herdr shortcut. Terminal configuration changes are not part of the normal installation.
@@ -111,13 +111,29 @@ Create `config.toml` inside the printed directory:
 search_mode = "hierarchical"
 ```
 
-`hierarchical` is the default if the file or setting is absent. Workspaces with multiple tabs are expanded, and every visible workspace/tab row is selectable. A workspace name match includes all its tabs. A tab match includes its selectable parent workspace. Groups keep their workspace order, and tabs keep Herdr's UI order, even during filtering.
+`hierarchical` is the default if the file or setting is absent. Opened linked worktrees are nested beneath their root workspace, and their tabs sit one level deeper. Root tabs appear directly beneath the root before its worktrees. Every visible workspace, worktree, and tab row is selectable. A root name match includes its worktrees and tabs; a worktree name match includes its tabs and selectable root; a tab match includes its selectable ancestors. Worktrees and tabs keep Herdr's UI order even during filtering.
 
-Set `search_mode = "flat"` for independent results such as `ColorPicker / Codex` and `ColorPicker`. Nonempty searches rank by fuzzy relevance; empty searches use the same workspace order as hierarchical mode. Tab results can match their parent name as context.
+Set `search_mode = "flat"` for independent results such as `ColorPicker / Codex` and `ColorPicker`. Nonempty searches rank by fuzzy relevance; empty searches use the same workspace order as hierarchical mode. Nested results include full context, such as `herdr-picker / multimachine / Codex`, and can match any ancestor name.
 
-In both modes, a workspace with exactly one tab appears as a single `Workspace - Tab` row. Both names remain searchable and matching text is highlighted. Selecting this row focuses the workspace and restores its remembered tab and pane. The row counts as one result. Multi-tab workspaces keep their normal layout even when filtering matches only one tab.
+In both modes, a workspace or worktree with exactly one tab appears as a single `Workspace - Tab` row. Both names remain searchable and matching text is highlighted. Selecting this row focuses the workspace and restores its remembered tab and pane. The row counts as one result. Multi-tab workspaces keep their normal layout even when filtering matches only one tab.
 
-Matching ignores case, supports noncontiguous characters, and requires **every whitespace-separated term** to match a workspace or tab name. Each term must fit within one name; separate terms can match different levels. `color codex` finds `ColorPicker / Codex`. `color` can also match `ColorPicker / Claude Code` because `cod` genuinely matches “Code.” No branches, paths, panes, agent metadata, or unopened worktrees participate. Full names stay searchable after visual truncation.
+Matching ignores case, supports noncontiguous characters, and requires **every whitespace-separated term** to match a workspace, worktree, or tab name. Each term must fit within one name; separate terms can match different levels. `color codex` finds `ColorPicker / Codex`. `color` can also match `ColorPicker / Claude Code` because `cod` genuinely matches “Code.” No branches, paths, panes, agent metadata, or unopened worktrees participate. Full names stay searchable after visual truncation.
+
+Worktrees are grouped by the snapshot's repository key, not their names or checkout paths. A renamed root still owns its worktrees. If the root workspace is closed, provenance is incomplete, or multiple open roots share the key, worktrees remain standalone destinations. Nothing is opened to create a parent row.
+
+For example, with one tab in each worktree:
+
+```text
+herdr-picker
+  1
+  2
+  multimachine - 1
+  skip-showing-tab-if-1-tab - 1
+  just - 1
+  worktree-hirarchy - 1
+```
+
+If `multimachine` has multiple tabs, it expands to `multimachine` with its tabs indented another level. `herdr-picker multimachine codex` finds its Codex tab and retains both ancestors in hierarchical mode. The active group appears first, other groups follow root workspace number order, and siblings keep workspace number order. The active marker stays on the actual focused destination, even when its root appears first.
 
 Changing the query immediately selects the first result in the current mode's ordering. Searching never switches automatically. Clearing the query selects the first result too; only a newly opened picker uses the initial other-workspace selection.
 

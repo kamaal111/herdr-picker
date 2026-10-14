@@ -30,7 +30,7 @@ fn empty_result_text_is_visible() {
 #[test]
 fn normal_palette_contains_input_count_results_and_help() {
     let rendered = draw(80, 20, "");
-    assert!(rendered.contains("Search workspaces and tabs"));
+    assert!(rendered.contains("Search workspaces, worktrees and tabs"));
     assert!(rendered.contains("8 results"));
     assert!(rendered.contains("ColorPicker"));
     assert!(rendered.contains("Esc Close"));
@@ -132,4 +132,100 @@ fn narrow_inline_row_truncates_unicode_by_cells() {
     let buffer = inline_buffer(14, SearchMode::Hierarchical);
     let text: String = (0..14).map(|x| buffer[(x, 2)].symbol()).collect();
     assert_eq!(text, "›● 世 界 … - Te…");
+}
+
+fn worktree_buffer(width: u16, mode: SearchMode, query: &str) -> ratatui::buffer::Buffer {
+    let snapshot = parse_snapshot(include_bytes!("fixtures/worktrees.json")).unwrap();
+    let mut app = App::new(snapshot, mode);
+    app.set_query(query.into());
+    let mut terminal = Terminal::new(TestBackend::new(width, 18)).unwrap();
+    terminal.draw(|frame| render(frame, &mut app)).unwrap();
+    terminal.backend().buffer().clone()
+}
+
+#[test]
+fn root_worktree_and_tab_use_three_distinct_indentation_levels() {
+    let buffer = worktree_buffer(
+        80,
+        SearchMode::Hierarchical,
+        "herdr-picker multimachine codex",
+    );
+    assert_eq!(buffer[(3, 2)].symbol(), "h");
+    assert_eq!(buffer[(5, 3)].symbol(), "m");
+    assert_eq!(buffer[(7, 4)].symbol(), "C");
+    assert!(
+        buffer[(3, 2)]
+            .modifier
+            .contains(ratatui::style::Modifier::UNDERLINED)
+    );
+    assert!(
+        buffer[(5, 3)]
+            .modifier
+            .contains(ratatui::style::Modifier::UNDERLINED)
+    );
+    assert!(
+        buffer[(7, 4)]
+            .modifier
+            .contains(ratatui::style::Modifier::UNDERLINED)
+    );
+}
+
+#[test]
+fn flat_nested_tab_displays_full_highlighted_breadcrumb() {
+    let buffer = worktree_buffer(80, SearchMode::Flat, "herdr-picker multimachine codex");
+    let text: String = (0..80).map(|x| buffer[(x, 2)].symbol()).collect();
+    assert!(text.contains("herdr-picker / multimachine / Codex"));
+    assert!(
+        buffer[(3, 2)]
+            .modifier
+            .contains(ratatui::style::Modifier::UNDERLINED)
+    );
+    assert!(
+        buffer[(18, 2)]
+            .modifier
+            .contains(ratatui::style::Modifier::UNDERLINED)
+    );
+    assert!(
+        buffer[(33, 2)]
+            .modifier
+            .contains(ratatui::style::Modifier::UNDERLINED)
+    );
+}
+
+#[test]
+fn nested_single_tab_worktree_stays_inline_and_active() {
+    let buffer = worktree_buffer(80, SearchMode::Hierarchical, "just terminal");
+    let text: String = (0..80).map(|x| buffer[(x, 3)].symbol()).collect();
+    assert!(text.contains("just - Terminal"));
+    assert_eq!(buffer[(1, 2)].symbol(), " ");
+    assert_eq!(buffer[(1, 3)].symbol(), "●");
+    assert_eq!(buffer[(5, 3)].symbol(), "j");
+}
+
+#[test]
+fn narrow_nested_tab_keeps_indentation_and_truncates_label() {
+    let buffer = worktree_buffer(10, SearchMode::Hierarchical, "multimachine codex");
+    let text: String = (0..10).map(|x| buffer[(x, 4)].symbol()).collect();
+    assert_eq!(text, "       Co…");
+    let flat = worktree_buffer(14, SearchMode::Flat, "herdr-picker multimachine codex");
+    let text: String = (0..14).map(|x| flat[(x, 2)].symbol()).collect();
+    assert_eq!(text, "›  … / m… / C…");
+}
+
+#[test]
+fn nested_unicode_breadcrumb_truncates_by_terminal_cells() {
+    let mut snapshot = parse_snapshot(include_bytes!("fixtures/worktrees.json")).unwrap();
+    snapshot.workspaces[1].label = "世界herdr-picker".into();
+    let mut app = App::new(snapshot, SearchMode::Flat);
+    app.set_query("世界 multimachine codex".into());
+    let mut terminal = Terminal::new(TestBackend::new(18, 10)).unwrap();
+    terminal.draw(|frame| render(frame, &mut app)).unwrap();
+    let buffer = terminal.backend().buffer();
+    let text: String = (0..18).map(|x| buffer[(x, 2)].symbol()).collect();
+    assert_eq!(text, "›  世 … / mu… / Co…");
+    assert!(
+        buffer[(3, 2)]
+            .modifier
+            .contains(ratatui::style::Modifier::UNDERLINED)
+    );
 }
