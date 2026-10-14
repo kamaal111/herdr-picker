@@ -151,7 +151,7 @@ Changing the query immediately selects the first result in the current mode's or
 | Left click | Focus clicked result and exit |
 | Mouse wheel | Move selection and scroll results |
 
-Navigation stops at the first/last row. Arrow left/right have no tree behavior. Empty results show “No matching results”; Enter does nothing. Every invocation starts with an empty query. `●` marks the currently active workspace/tab; `›` and the theme accent background mark selection. Matches are bold and underlined, including on selected rows. Labels stay on one line and truncate with `…`.
+Navigation stops at the first/last row. Arrow left/right have no tree behavior. Empty results show “No matching results”; Enter does nothing. Every invocation starts with an empty query. `●` marks the currently active workspace/tab; `›` and the theme selection background mark selection. Matches are bold and underlined, including on selected rows. Labels stay on one line and truncate with `…`.
 
 The centered popup is 80% wide and at most 22 outer rows, clamped by Herdr to the terminal size. All results remain reachable by scrolling. The terminal UI responds to resize; extremely small areas retain Escape guidance. It requests terminal mouse reporting; Herdr 0.9.5 source forwards popup mouse events. Enable Herdr's mouse capture if the outer terminal otherwise handles clicks.
 
@@ -160,6 +160,12 @@ The centered popup is 80% wide and at most 22 outer rows, clamped by Herdr to th
 The picker reads Herdr's saved theme configuration on each opening. It follows
 `HERDR_CONFIG_PATH`, then `XDG_CONFIG_HOME/herdr/config.toml`, then
 `~/.config/herdr/config.toml`. No picker theme configuration is needed.
+
+Root workspace names use the theme accent, worktree names use green, and tab
+names use blue, including breadcrumbs and inline tabs. With Dracula these
+are purple (`#BD93F9`), green (`#50FA7B`), and cyan (`#8BE9FD`). Custom token
+overrides apply to these colors too. Selected results retain their type
+colors over the theme selection background.
 
 All Herdr 0.9.5 built-in themes, aliases, `[theme.custom]` colors, and legacy
 `ui.accent` overrides are supported. The panel, text, selection, hints, and

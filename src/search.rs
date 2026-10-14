@@ -9,14 +9,23 @@ use crate::{
     ordering,
 };
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RowKind {
+    RootWorkspace,
+    Worktree,
+    Tab,
+}
+
 #[derive(Clone, Debug)]
 pub struct Ancestor {
+    pub kind: RowKind,
     pub label: String,
     pub matches: Vec<usize>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Row {
+    pub kind: RowKind,
     pub target: Target,
     pub workspace_id: String,
     pub label: String,
@@ -106,7 +115,13 @@ impl Search {
             [tab] => Some(tab.label.clone()),
             _ => None,
         };
+        let kind = if ancestors.is_empty() {
+            RowKind::RootWorkspace
+        } else {
+            RowKind::Worktree
+        };
         let mut row = Row {
+            kind,
             target: Target::Workspace(workspace.workspace_id.clone()),
             workspace_id: workspace.workspace_id.clone(),
             label: workspace.label.clone(),
@@ -121,6 +136,7 @@ impl Search {
         let matched = self.match_row(&mut row, terms);
         let mut child_ancestors = ancestors.to_vec();
         child_ancestors.push(Ancestor {
+            kind,
             label: workspace.label.clone(),
             matches: Vec::new(),
         });
@@ -128,6 +144,7 @@ impl Search {
         if row.inline_tab.is_none() {
             for tab in tabs {
                 let mut child = Row {
+                    kind: RowKind::Tab,
                     target: Target::Tab(tab.tab_id.clone()),
                     workspace_id: workspace.workspace_id.clone(),
                     label: tab.label.clone(),

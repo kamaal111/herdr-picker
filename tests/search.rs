@@ -2,7 +2,7 @@ use herdr_picker::{
     api::parse_snapshot,
     config::SearchMode,
     model::Target,
-    search::{Row, Search},
+    search::{Row, RowKind, Search},
 };
 
 fn rows(query: &str, mode: SearchMode) -> Vec<Row> {
@@ -325,4 +325,38 @@ fn single_root_tab_is_not_search_context_for_other_worktrees() {
             .iter()
             .all(|row| row.target != Target::Tab("w5:t1".into()))
     );
+}
+
+#[test]
+fn nested_rows_and_breadcrumbs_retain_destination_kinds() {
+    let result = worktree_rows("herdr-picker multimachine codex", SearchMode::Hierarchical);
+    assert_eq!(
+        result.iter().map(|row| row.kind).collect::<Vec<_>>(),
+        vec![RowKind::RootWorkspace, RowKind::Worktree, RowKind::Tab]
+    );
+    assert_eq!(
+        result[2]
+            .ancestors
+            .iter()
+            .map(|ancestor| ancestor.kind)
+            .collect::<Vec<_>>(),
+        vec![RowKind::RootWorkspace, RowKind::Worktree]
+    );
+    let flat = worktree_rows("herdr-picker multimachine codex", SearchMode::Flat);
+    assert_eq!(flat[0].kind, RowKind::Tab);
+    assert_eq!(flat[0].ancestors[0].kind, RowKind::RootWorkspace);
+    assert_eq!(flat[0].ancestors[1].kind, RowKind::Worktree);
+}
+
+#[test]
+fn ungrouped_linked_worktree_uses_root_kind() {
+    let mut snapshot = parse_snapshot(include_bytes!("fixtures/worktrees.json")).unwrap();
+    snapshot
+        .workspaces
+        .retain(|workspace| workspace.workspace_id != "w1");
+    snapshot.tabs.retain(|tab| tab.workspace_id != "w1");
+    let result = Search::default().rows(&snapshot, "multimachine codex", SearchMode::Flat);
+    assert_eq!(result[0].kind, RowKind::Tab);
+    assert_eq!(result[0].ancestors.len(), 1);
+    assert_eq!(result[0].ancestors[0].kind, RowKind::RootWorkspace);
 }
