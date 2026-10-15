@@ -219,6 +219,10 @@ merging release PRs, just as for application changes.
 
 ### Normal release flow
 
+Merging the automation setup alone does not create a release PR: its `chore:`
+commit does not request a release. The first `fix:` or `feat:` commit on `main`
+starts the flow below.
+
 1. Land changes on `main` using Conventional Commit titles: `fix: correct tab
    focus` for a patch, `feat: add a search mode` for a minor, and `feat!: change
    the configuration format` for a breaking change. When squash merging, use
