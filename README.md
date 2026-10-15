@@ -197,6 +197,54 @@ Palette compatibility is pinned to the inspected Herdr 0.9.5 source; future
 Herdr palette changes may require updating the plugin. Outside clicks are
 ignored by Herdr 0.9.5; use Cancel to close with the mouse.
 
+## Releasing
+
+Releases are managed by [Release Please](https://github.com/googleapis/release-please-action)
+in [the Release workflow](.github/workflows/release.yml). You do not need to
+edit version files or create GitHub releases manually.
+
+### One-time GitHub setup
+
+The workflow uses GitHub Actions' built-in `GITHUB_TOKEN`; no personal access
+token or repository secret is needed. Under **Settings → Actions → General →
+Workflow permissions**, enable **Allow GitHub Actions to create and approve
+pull requests**. The workflow declares the write permissions it needs.
+
+When the bot opens or updates its release PR, click **Approve workflows to run**
+in the PR merge box so the existing CI checks can run. GitHub requires this
+approval for PR workflows triggered using the built-in token. See
+[GitHub token workflow behavior](https://docs.github.com/en/actions/concepts/security/github_token#when-github_token-triggers-workflow-runs).
+Configure branch protection on `main` to require the existing CI checks before
+merging release PRs, just as for application changes.
+
+### Normal release flow
+
+1. Land changes on `main` using Conventional Commit titles: `fix: correct tab
+   focus` for a patch, `feat: add a search mode` for a minor, and `feat!: change
+   the configuration format` for a breaking change. When squash merging, use
+   that format for the final squash commit title. While below 1.0, breaking
+   changes also bump the minor version. `docs:` and `chore:` changes alone do
+   not request a release.
+2. The Release workflow opens or updates one release PR with matching versions
+   in `Cargo.toml`, `Cargo.lock`, and `herdr-plugin.toml`, plus `CHANGELOG.md`
+   and the release version manifest. Review the proposed version and notes,
+   approve the workflow runs, and wait for CI to pass.
+3. Merge that release PR, preserving its generated title and release metadata.
+   The next Release workflow run creates the matching `vX.Y.Z` tag and publishes
+   a GitHub Release with the changelog notes. No crates.io publication or binary
+   upload is needed for Herdr's source installation.
+
+The version manifest starts at the existing `0.1.0`; the bootstrap SHA excludes
+older, non-Conventional Commit history from the initial release calculation.
+For example, the next `fix:` proposes `0.1.1`. You can rerun the workflow from
+**Actions → Release → Run workflow** on `main` after fixing credentials or a
+transient failure; running it without releasable changes does not force a new
+version.
+
+Users still run `herdr plugin update herdr-picker` on each machine. Installations
+follow `main`, so merged application changes become available before a versioned
+GitHub Release is published.
+
 ## Development
 
 With [Just](https://github.com/casey/just) installed, run `just` to list the available recipes. CI uses Just 1.58.0 and runs the same Rust and PTY verification workflow on macOS and Linux:
