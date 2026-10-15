@@ -2,16 +2,11 @@
 
 A small, on-demand Rust plugin that fuzzy-finds **open Herdr workspaces, worktrees, and tabs**. Type immediately, move with the keyboard, and press Enter to focus a destination. Opened worktrees are nested beneath their root workspace. Nothing is created or closed.
 
-```text
-> color codex                                      2 results
-─────────────────────────────────────────────────────────
-    ColorPicker
-›     Codex
+![Herdr Picker in Dracula, searching populated workspaces, linked worktrees, and Codex tabs](tests/snapshots/baselines/showcase-dracula.png)
 
- ↑↓/Ctrl+P,N Navigate
-
-                  ↵ OK    Esc Cancel
-```
+Captured from a real, isolated Herdr session with three projects, five linked
+worktrees, and fifteen tabs. The prefilled `codex` query highlights matching
+destinations and retains their workspace and worktree context.
 
 Herdr's built-in sidebar and navigation keys move through its existing UI. This plugin adds one searchable palette containing selectable workspace rows and individual tab destinations, including matching across both names.
 
@@ -189,7 +184,7 @@ ignored by Herdr 0.9.5; use Cancel to close with the mouse.
 
 ## Development
 
-With [Just](https://github.com/casey/just) installed, run `just` to list the available recipes. CI uses Just 1.58.0 and runs the same complete verification workflow on macOS and Linux:
+With [Just](https://github.com/casey/just) installed, run `just` to list the available recipes. CI uses Just 1.58.0 and runs the same Rust and PTY verification workflow on macOS and Linux:
 
 ```sh
 just ready
@@ -217,7 +212,38 @@ cargo build --locked --release --target-dir target
 python3 tests/pty_smoke.py
 ```
 
-The Rust tests do not need a running Herdr server. Python 3 is used only by the optional PTY smoke suite, which launches the real release binary against a fake CLI and checks focus requests, resize, terminal cleanup, cancellation, and failure recovery. CI runs both suites on macOS and Linux. See [manual end-to-end checks](docs/manual-testing.md) before publishing a release.
+The Rust tests do not need a running Herdr server. The PTY smoke suite uses host Python 3 to launch the real release binary against a fake CLI and check focus requests, resize, terminal cleanup, cancellation, and failure recovery. CI runs both suites on macOS and Linux. The visual snapshot suite below supplies Python inside its container. See [manual end-to-end checks](docs/manual-testing.md) before publishing a release.
+
+### Visual snapshots
+
+With Docker running, compare the committed PNG baselines:
+
+```sh
+just test-snapshots
+```
+
+The snapshot suite starts its own Herdr 0.9.5 server inside a pinned Linux
+x86_64 container, creates real repositories and linked worktrees, and opens
+the plugin through its manifest action. It captures the full terminal window
+with fixed fonts and dimensions. Loading, empty-data, and tiny-terminal cases
+use the same production renderer with Ratatui's test backend. No changes are
+made to your Herdr configuration, plugins, or running sessions.
+
+For an intentional UI change, record and review the updated images:
+
+```sh
+just record-snapshots
+just record-snapshots showcase-dracula
+just test-snapshots --repeat 2
+```
+
+Commit the changed PNGs with the UI change to preview them in GitHub's image
+diff viewer. The README uses the tested showcase baseline directly. CI runs
+snapshot comparisons alongside the macOS/Linux `just ready` checks and uploads
+the `visual-snapshots` artifact for seven days, including actual previews,
+expected images and pixel differences on failure, and terminal/server logs.
+Comparison never updates baselines, and recording is disabled in CI.
+See [snapshot testing](docs/snapshots.md) for cases and troubleshooting.
 
 A read-only connection/response check:
 
@@ -265,3 +291,6 @@ macOS builds, automated tests, PTY behavior, and live snapshot parsing were veri
 
 Project code is MIT licensed; adapted Herdr palette code is Apache-2.0 licensed
 with attribution in `src/theme.rs` and `LICENSES/Herdr-Apache-2.0.txt`. Once published, maintainers can add the GitHub topic `herdr-plugin` for Herdr's community plugin index.
+
+Snapshot fonts are DejaVu Sans Mono 2.37, redistributed under their
+[Bitstream Vera license](tests/snapshots/fonts/LICENSE).

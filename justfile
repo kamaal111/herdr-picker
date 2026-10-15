@@ -39,6 +39,14 @@ quality: format-check lint
 # Run all CI verification checks
 ready: quality test test-pty
 
+# Compare PNG baselines in the pinned Linux environment (requires Docker)
+test-snapshots *args:
+    sh tests/snapshots/run.sh {{args}}
+
+# Intentionally update all PNG baselines, or specify case names (never in CI)
+record-snapshots *cases:
+    sh tests/snapshots/run.sh --record {{cases}}
+
 # Build and register this checkout as a local Herdr plugin
 plugin-link: build-release
     "${HERDR_BIN_PATH:-herdr}" plugin link "$PWD"
