@@ -31,11 +31,15 @@ pub struct Row {
     pub label: String,
     pub ancestors: Vec<Ancestor>,
     pub depth: usize,
-    pub inline_tab: Option<String>,
-    pub inline_tab_matches: Vec<usize>,
     pub label_matches: Vec<usize>,
     pub score: u32,
     pub active: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct WorkspaceResult {
+    pub workspace: Row,
+    pub tabs: Vec<Row>,
 }
 
 #[derive(Default)]
@@ -45,6 +49,52 @@ pub struct Search {
 }
 
 impl Search {
+    pub fn results(
+        &mut self,
+        snapshot: &Snapshot,
+        query: &str,
+        mode: SearchMode,
+    ) -> Vec<WorkspaceResult> {
+        let rows = self.rows(snapshot, query, mode);
+        let mut results = Vec::new();
+        for workspace in ordering::workspaces(snapshot) {
+            let Some(owner) = rows.iter().find(
+                |row| matches!(&row.target, Target::Workspace(id) if id == &workspace.workspace_id),
+            ) else {
+                continue;
+            };
+            let mut tabs: Vec<_> = snapshot
+                .tabs
+                .iter()
+                .filter(|tab| tab.workspace_id == workspace.workspace_id)
+                .filter_map(|tab| {
+                    rows.iter()
+                        .find(|row| matches!(&row.target, Target::Tab(id) if id == &tab.tab_id))
+                        .map(|row| (tab.number, row.clone()))
+                })
+                .collect();
+            tabs.sort_by_key(|(number, _)| *number);
+            results.push(WorkspaceResult {
+                workspace: owner.clone(),
+                tabs: tabs.into_iter().map(|(_, row)| row).collect(),
+            });
+        }
+        if mode == SearchMode::Flat && !query.trim().is_empty() {
+            results.sort_by_key(|result| {
+                std::cmp::Reverse(
+                    result
+                        .tabs
+                        .iter()
+                        .map(|tab| tab.score)
+                        .chain(std::iter::once(result.workspace.score))
+                        .max()
+                        .unwrap_or(0),
+                )
+            });
+        }
+        results
+    }
+
     fn matched(&mut self, label: &str, term: &Atom) -> Option<(u32, Vec<usize>)> {
         self.buffer.clear();
         self.buffer.extend(label.chars());
@@ -63,7 +113,6 @@ impl Search {
             .iter()
             .map(|ancestor| ancestor.label.as_str())
             .chain(std::iter::once(row.label.as_str()))
-            .chain(row.inline_tab.as_deref())
             .collect();
         let mut matches = vec![Vec::new(); labels.len()];
         let mut score = 0;
@@ -116,9 +165,6 @@ impl Search {
             ancestor.matches.clone_from(indices);
         }
         row.label_matches.clone_from(&matches[row.depth]);
-        if row.inline_tab.is_some() {
-            row.inline_tab_matches.clone_from(&matches[row.depth + 1]);
-        }
         row.score = score;
         true
     }
@@ -131,16 +177,12 @@ impl Search {
         ancestors: &[Ancestor],
         terms: &[Atom],
         mode: SearchMode,
-    ) -> Vec<Row> {
+    ) -> (Vec<Row>, Vec<Row>) {
         let tabs: Vec<_> = snapshot
             .tabs
             .iter()
             .filter(|tab| tab.workspace_id == workspace.workspace_id)
             .collect();
-        let inline_tab = match tabs.as_slice() {
-            [tab] => Some(tab.label.clone()),
-            _ => None,
-        };
         let kind = if ancestors.is_empty() {
             RowKind::RootWorkspace
         } else {
@@ -153,8 +195,6 @@ impl Search {
             label: workspace.label.clone(),
             ancestors: ancestors.to_vec(),
             depth: ancestors.len(),
-            inline_tab,
-            inline_tab_matches: Vec::new(),
             label_matches: Vec::new(),
             score: 0,
             active: snapshot.focused_workspace_id.as_ref() == Some(&workspace.workspace_id),
@@ -167,39 +207,35 @@ impl Search {
             matches: Vec::new(),
         });
         let mut children = Vec::new();
-        if row.inline_tab.is_none() {
-            for tab in tabs {
-                let mut child = Row {
-                    kind: RowKind::Tab,
-                    target: Target::Tab(tab.tab_id.clone()),
-                    workspace_id: workspace.workspace_id.clone(),
-                    label: tab.label.clone(),
-                    ancestors: child_ancestors.clone(),
-                    depth: child_ancestors.len(),
-                    inline_tab: None,
-                    inline_tab_matches: Vec::new(),
-                    label_matches: Vec::new(),
-                    score: 0,
-                    active: snapshot.focused_tab_id.as_ref() == Some(&tab.tab_id),
-                };
-                if self.match_row(&mut child, terms) {
-                    children.push(child);
-                }
+        for tab in tabs {
+            let mut child = Row {
+                kind: RowKind::Tab,
+                target: Target::Tab(tab.tab_id.clone()),
+                workspace_id: workspace.workspace_id.clone(),
+                label: tab.label.clone(),
+                ancestors: child_ancestors.clone(),
+                depth: child_ancestors.len(),
+                label_matches: Vec::new(),
+                score: 0,
+                active: snapshot.focused_tab_id.as_ref() == Some(&tab.tab_id),
+            };
+            if self.match_row(&mut child, terms) {
+                children.push(child);
             }
         }
+        let mut context_owners = Vec::new();
         for worktree in worktrees {
-            children.extend(self.workspace_rows(
-                snapshot,
-                worktree,
-                &[],
-                &child_ancestors,
-                terms,
-                mode,
-            ));
+            let (worktree_rows, owners) =
+                self.workspace_rows(snapshot, worktree, &[], &child_ancestors, terms, mode);
+            children.extend(worktree_rows);
+            context_owners.extend(owners);
         }
         let mut rows = Vec::new();
-        if matched || (mode == SearchMode::Hierarchical && !children.is_empty()) {
-            if mode == SearchMode::Hierarchical {
+        let owns_matching_tabs = children.iter().any(|child| {
+            child.kind == RowKind::Tab && child.workspace_id == workspace.workspace_id
+        });
+        if matched || !children.is_empty() {
+            if mode == SearchMode::Hierarchical || (!matched && owns_matching_tabs) {
                 for child in &children {
                     for (ancestor, context) in row.ancestors.iter_mut().zip(&child.ancestors) {
                         ancestor.matches.extend(&context.matches);
@@ -212,10 +248,14 @@ impl Search {
                 row.label_matches.sort_unstable();
                 row.label_matches.dedup();
             }
-            rows.push(row);
+            if matched || mode == SearchMode::Hierarchical {
+                rows.push(row);
+            } else if owns_matching_tabs {
+                context_owners.push(row);
+            }
         }
         rows.extend(children);
-        rows
+        (rows, context_owners)
     }
 
     pub fn rows(&mut self, snapshot: &Snapshot, query: &str, mode: SearchMode) -> Vec<Row> {
@@ -232,18 +272,22 @@ impl Search {
             })
             .collect();
         let mut rows = Vec::new();
+        let mut context_owners = Vec::new();
         for group in ordering::groups(snapshot) {
-            rows.extend(self.workspace_rows(
-                snapshot,
-                group.root,
-                &group.worktrees,
-                &[],
-                &terms,
-                mode,
-            ));
+            let (group_rows, owners) =
+                self.workspace_rows(snapshot, group.root, &group.worktrees, &[], &terms, mode);
+            rows.extend(group_rows);
+            context_owners.extend(owners);
         }
         if mode == SearchMode::Flat && !terms.is_empty() {
             rows.sort_by_key(|r| std::cmp::Reverse(r.score));
+        }
+        for owner in context_owners {
+            let index = rows
+                .iter()
+                .position(|row| row.kind == RowKind::Tab && row.workspace_id == owner.workspace_id)
+                .expect("context owner has a matching tab");
+            rows.insert(index, owner);
         }
         rows
     }

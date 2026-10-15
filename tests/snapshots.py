@@ -1,4 +1,4 @@
-"""PNG regressions from a real, isolated Herdr session and controlled UI states."""
+"""Visual and focus regressions from isolated Herdr sessions and controlled UI states."""
 
 import argparse
 import codecs
@@ -31,7 +31,7 @@ FONTS = ROOT / "tests/snapshots/fonts"
 CASES = (
     "showcase-dracula", "hierarchical-unfiltered", "flat-search", "no-matches",
     "narrow-search", "scrolled-selection", "light-search",
-    "empty-snapshot", "loading", "tiny-terminal",
+    "empty-snapshot", "loading", "tiny-terminal", "tab-cycling",
 )
 CONTROLLED = {"empty-snapshot", "loading", "tiny-terminal"}
 ANSI = dict(zip(
@@ -151,7 +151,7 @@ class Client:
                                   reverse=char.reverse))
         return dict(width=self.screen.columns, height=self.screen.lines, cells=cells)
 
-    def wait(self, *needles, timeout=15):
+    def wait(self, *needles, timeout=15, absent=()):
         deadline = time.monotonic() + timeout
         previous, stable_since = None, time.monotonic()
         while time.monotonic() < deadline:
@@ -160,11 +160,13 @@ class Client:
             text = "\n".join(self.screen.display)
             if grid != previous:
                 previous, stable_since = grid, time.monotonic()
-            if all(needle in text for needle in needles) and time.monotonic() - stable_since >= 0.5:
+            if (all(needle in text for needle in needles)
+                    and not any(needle in text for needle in absent)
+                    and time.monotonic() - stable_since >= 0.5):
                 return grid
             if self.process.poll() is not None:
                 raise RuntimeError(f"Herdr client exited: {self.process.returncode}")
-        raise TimeoutError(f"Screen did not settle with {needles!r}:\n{text}")
+        raise TimeoutError(f"Screen did not settle with {needles!r}, absent={absent!r}:\n{text}")
 
     def send(self, keys):
         os.write(self.master, keys)
@@ -248,7 +250,11 @@ enabled = false
         )
         self.wait_ready()
         self.seed()
-        width, height = (32, 20) if self.case == "narrow-search" else (160, 40)
+        width, height = {
+            "narrow-search": (32, 20),
+            "scrolled-selection": (160, 12),
+            "tab-cycling": (60, 20),
+        }.get(self.case, (160, 40))
         self.client = Client(self.environment, width, height, self.directory)
         self.client.wait("Codex", "$")
 
@@ -315,14 +321,24 @@ enabled = false
         assert sum(bool(w.get("worktree", {}).get("is_linked_worktree"))
                    for w in snapshot["workspaces"]) == 5, snapshot
 
-    def capture(self):
+    def open_picker(self):
         self.run("herdr", "--session", "snapshot", "plugin", "action", "invoke", "herdr-picker.open")
-        self.client.wait("results", "Esc Cancel")
+        return self.client.wait("results", "Esc Cancel")
+
+    def capture(self):
+        self.open_picker()
         if self.case == "hierarchical-unfiltered":
             return self.client.wait("docs/readme", "results")
         if self.case == "scrolled-selection":
             self.client.send(b"\x0e" * 40)
-            return self.client.wait("dotfiles - Codex", "20/20")
+            grid = self.client.wait("dotfiles", "8/8")
+            assert "[●Codex]" not in "\n".join(self.client.screen.display)
+            return grid
+        if self.case == "tab-cycling":
+            self.client.send(b"herdr-picker")
+            self.client.wait("> herdr-picker", "4 results")
+            self.client.send(b"\t\t\t\t\x1b[Z")
+            return self.client.wait("[Tests]", "◀", "4 results")
         query = {
             "flat-search": "herdr-picker feature/search codex",
             "no-matches": "zzzzzzzz",
@@ -332,9 +348,9 @@ enabled = false
         if self.case == "no-matches":
             needles += ["0 results", "No matching results"]
         elif self.case == "flat-search":
-            needles += ["herdr-picker / feature/search / Codex", "1 results"]
+            needles += ["herdr-picker / feature/search", "[Codex]", "1 results"]
         elif self.case != "narrow-search":
-            needles += ["feature/search", "fix/pricing - Codex", "dotfiles - Codex"]
+            needles += ["feature/search", "fix/pricing", "dotfiles"]
         return self.client.wait(*needles)
 
     def close(self):
@@ -427,6 +443,18 @@ class ComparisonTests(unittest.TestCase):
                 client.wait("never appears")
         client.read.assert_called_once()
 
+    def test_visible_popup_prevents_wait_from_accepting_the_underlying_prompt(self):
+        client = Client.__new__(Client)
+        client.screen = pyte.Screen(30, 2)
+        pyte.Stream(client.screen).feed("$ Esc Cancel")
+        client.read = Mock()
+        client.process = Mock()
+        client.process.poll.return_value = None
+        with patch("time.monotonic", side_effect=[0, 0, 0, 0, 16]):
+            with self.assertRaisesRegex(TimeoutError, "did not settle"):
+                client.wait("$", absent=("Esc Cancel",))
+        client.read.assert_called_once()
+
     def test_cleanup_stops_owned_process_when_api_stop_fails(self):
         session = Session(self.path, "showcase-dracula")
         session.run = Mock(side_effect=RuntimeError("API unavailable"))
@@ -452,11 +480,156 @@ class ComparisonTests(unittest.TestCase):
         screen.write_process_input.assert_called_once_with("\x1b[1;1R")
 
 
+def focus_state(snapshot):
+    return tuple(snapshot[key] for key in
+                 ("focused_workspace_id", "focused_tab_id", "focused_pane_id"))
+
+
+def layout_state(snapshot):
+    return {
+        layout["tab_id"]: dict(
+            workspace_id=layout["workspace_id"],
+            focused_pane_id=layout["focused_pane_id"],
+            panes=[pane["pane_id"] for pane in layout["panes"]],
+            splits=[{key: split[key] for key in ("id", "direction", "ratio")}
+                    for split in layout["splits"]],
+            zoomed=layout["zoomed"],
+        )
+        for layout in snapshot["layouts"]
+    }
+
+
+class FocusTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="herdr-focus-")
+        self.addCleanup(self.temporary.cleanup)
+        self.case = f"focus-{self._testMethodName}"
+        self.output = OUTPUT / self.case
+        if self.output.exists():
+            shutil.rmtree(self.output)
+        self.output.mkdir(parents=True)
+        self.session = Session(Path(self.temporary.name), self.case)
+        self.addCleanup(self.session.close)
+        self.session.setup()
+        self.initial = self.snapshot()
+        self.origin = self.split_tab(self.initial["focused_tab_id"])
+        self.session.client.wait("$")
+
+    def snapshot(self):
+        return self.session.api("api", "snapshot")["snapshot"]
+
+    def split_tab(self, tab):
+        self.session.api("tab", "focus", tab)
+        before = self.snapshot()
+        pane = self.session.api("pane", "split", before["focused_pane_id"],
+                                "--direction", "right", "--focus")["pane"]
+        self.assertNotEqual(pane["pane_id"], before["focused_pane_id"])
+        return pane["workspace_id"], pane["tab_id"], pane["pane_id"]
+
+    def prepare_target(self, workspace_label, tab_label, remembered_tab=None):
+        workspace = next(workspace for workspace in self.initial["workspaces"]
+                         if workspace["label"] == workspace_label)["workspace_id"]
+        tabs = {tab["label"]: tab["tab_id"] for tab in self.initial["tabs"]
+                if tab["workspace_id"] == workspace}
+        target = self.split_tab(tabs[tab_label])
+        if remembered_tab is not None:
+            self.session.api("tab", "focus", tabs[remembered_tab])
+        self.session.api("tab", "focus", self.origin[1])
+        return target
+
+    def open_picker(self, query):
+        self.before = self.snapshot()
+        (self.output / "before.json").write_text(json.dumps(self.before, indent=2))
+        self.session.open_picker()
+        opened = self.snapshot()
+        self.assertEqual(layout_state(opened), layout_state(self.before))
+        self.assertEqual(focus_state(opened), focus_state(self.before))
+        self.session.client.send(query.encode())
+        self.session.client.wait(f"> {query}", "results")
+
+    def click(self, label):
+        y, line = next((y, line) for y, line in enumerate(self.session.client.screen.display)
+                       if label in line)
+        x = line.index(label)
+        return f"\x1b[<0;{x + 1};{y + 1}M".encode()
+
+    def finish(self, keys, expected):
+        self.session.client.send(keys)
+        self.session.client.wait("$", absent=("Workspaces and tabs", "Esc Cancel"))
+        after = self.snapshot()
+        (self.output / "after.json").write_text(json.dumps(after, indent=2))
+        self.assertEqual(layout_state(after), layout_state(self.before))
+        self.assertEqual(sorted(pane["pane_id"] for pane in after["panes"]),
+                         sorted(pane["pane_id"] for pane in self.before["panes"]))
+        remembered = {workspace["workspace_id"]: workspace["active_tab_id"]
+                      for workspace in self.before["workspaces"]}
+        remembered[expected[0]] = expected[1]
+        self.assertEqual({workspace["workspace_id"]: workspace["active_tab_id"]
+                          for workspace in after["workspaces"]}, remembered)
+        return after
+
+    def test_workspace_enter_restores_remembered_tab_and_non_root_pane(self):
+        target = self.prepare_target("TCG", "Terminal")
+        self.open_picker("TCG")
+        after = self.finish(b"\r", target)
+        self.assertEqual(focus_state(after), target)
+        self.session.client.send(b"printf 'picker-%s-ready\\n' 'input'\r")
+        self.session.client.wait("picker-input-ready", absent=("Esc Cancel",))
+        self.assertIn("picker-input-ready", self.session.run(
+            "herdr", "--session", "snapshot", "pane", "read", target[2], "--format", "text"))
+        self.assertEqual(self.snapshot()["focused_pane_id"], target[2])
+
+    def test_flat_tab_enter_switches_worktree_and_preserves_its_non_root_pane(self):
+        target = self.prepare_target("feature/search", "Tests", remembered_tab="Codex")
+        config = Path(self.session.run("herdr", "plugin", "config-dir", "herdr-picker").strip())
+        (config / "config.toml").write_text('search_mode = "flat"\n')
+        self.open_picker("feature/search tests")
+        self.session.client.send(b"\t")
+        after = self.finish(b"\r", target)
+        self.assertEqual(focus_state(after), target)
+
+    def test_ok_click_restores_workspace_tab_and_non_root_pane(self):
+        target = self.prepare_target("TCG", "Terminal")
+        self.open_picker("TCG")
+        after = self.finish(self.click("↵ OK"), target)
+        self.assertEqual(focus_state(after), target)
+
+    def test_mouse_click_on_sole_tab_preserves_its_non_root_pane(self):
+        target = self.prepare_target("dotfiles", "Codex")
+        self.open_picker("dotfiles")
+        after = self.finish(self.click("[Codex]"), target)
+        self.assertEqual(focus_state(after), target)
+
+    def test_escape_after_selecting_another_tab_keeps_original_focus_and_layout(self):
+        self.prepare_target("feature/search", "Tests", remembered_tab="Codex")
+        self.open_picker("feature/search tests")
+        self.session.client.send(b"\x1b[B\t")
+        after = self.finish(b"\x1b", self.origin)
+        self.assertEqual(focus_state(after), self.origin)
+        self.session.client.send(b"printf 'picker-%s-ready\\n' 'cancel'\r")
+        self.session.client.wait("picker-cancel-ready", absent=("Esc Cancel",))
+        self.assertIn("picker-cancel-ready", self.session.run(
+            "herdr", "--session", "snapshot", "pane", "read", self.origin[2], "--format", "text"))
+        self.assertEqual(self.snapshot()["focused_pane_id"], self.origin[2])
+
+    def test_closed_destination_restores_original_tab_and_non_root_pane(self):
+        target = self.prepare_target("feature/search", "Tests", remembered_tab="Codex")
+        self.open_picker("feature/search tests")
+        self.session.client.send(b"\x1b[B\t")
+        self.session.api("tab", "close", target[1])
+        self.before = self.snapshot()
+        (self.output / "destination-closed.json").write_text(json.dumps(self.before, indent=2))
+        after = self.finish(b"\r", self.origin)
+        self.assertNotIn(target[1], [tab["tab_id"] for tab in after["tabs"]])
+        self.assertEqual(focus_state(after), self.origin)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--record", action="store_true")
     parser.add_argument("--repeat", type=int, default=1, help="capture each case repeatedly to check determinism")
     parser.add_argument("--self-test", action="store_true")
+    parser.add_argument("--focus-tests", action="store_true")
     parser.add_argument("cases", nargs="*", metavar="CASE", help=", ".join(CASES))
     args = parser.parse_args()
     if any(case not in CASES for case in args.cases):
@@ -470,6 +643,9 @@ def main():
         return 0 if result.wasSuccessful() else 1
     subprocess.run(["cargo", "+1.99.0", "build", "--locked", "--release", "--bin", "herdr-picker",
                     "--example", "snapshot_render"], check=True)
+    if args.focus_tests:
+        result = unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(FocusTests))
+        return 0 if result.wasSuccessful() else 1
     failed = []
     for case in args.cases or CASES:
         directory = OUTPUT / case

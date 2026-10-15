@@ -29,14 +29,14 @@ herdr plugin action invoke herdr-picker.open
 
 `plugin link` does not run build commands. Rebuild after source changes. Linking registers the plugin globally for the current user; it does not edit keyboard shortcuts.
 
-Once a maintainer publishes this repository to GitHub, replace `OWNER` with that account:
+Install this repository directly from GitHub:
 
 ```sh
-herdr plugin install OWNER/herdr-picker
+herdr plugin install kamaal111/herdr-picker
 herdr plugin action invoke herdr-picker.open
 ```
 
-Herdr runs the manifest's locked Cargo release build during GitHub installation. Review the installation preview as with any executable plugin. This project does not assume that a published repository or prebuilt binary exists.
+Herdr runs the manifest's locked Cargo release build during GitHub installation. Review the installation preview as with any executable plugin. Installation builds from source; no prebuilt binary is required.
 
 To open the pane entrypoint directly:
 
@@ -66,7 +66,7 @@ herdr plugin action invoke herdr-picker.open
 
 The `check` command validates discovery without changing focus. The final command opens the picker; press Escape to dismiss it or select a destination with Enter. Keep the project directory at that location while linked, because Herdr launches the executable from it.
 
-After confirming the action works, add a launch shortcut using the next section. Search mode defaults to hierarchical without creating a plugin config file. For a fuller check, follow [manual end-to-end verification](docs/manual-testing.md).
+After confirming the action works, add a launch shortcut using the next section. Search mode defaults to hierarchical without creating a plugin config file. The [automated verification commands](#development) exercise discovery, popup launch, and destination focus in isolated sessions.
 
 ## Launch shortcut
 
@@ -108,45 +108,48 @@ Create `config.toml` inside the printed directory:
 search_mode = "hierarchical"
 ```
 
-`hierarchical` is the default if the file or setting is absent. Opened linked worktrees are nested beneath their root workspace, and their tabs sit one level deeper. Root tabs appear directly beneath the root before its worktrees. Every visible workspace, worktree, and tab row is selectable. A root name match includes its worktrees and tabs; a worktree name match includes its tabs and selectable root; a tab match includes its selectable ancestors. Worktrees and tabs keep Herdr's UI order even during filtering.
+`hierarchical` is the default if the file or setting is absent. Opened linked worktrees are nested beneath their root workspace. Each workspace/worktree occupies one row, with its matching tabs displayed horizontally to its right. A root name match includes its worktrees and tabs; a worktree name match includes its tabs and selectable root; a tab match includes its selectable ancestors. Workspaces and worktrees keep Herdr's UI order during filtering; tabs always keep Herdr tab order.
 
-Set `search_mode = "flat"` for independent results such as `ColorPicker / Codex` and `ColorPicker`. Nonempty searches rank by fuzzy relevance; empty searches use the same workspace order as hierarchical mode. Nested results include full context, such as `herdr-picker / multimachine / Codex`, and can match any ancestor name.
+Set `search_mode = "flat"` for workspace rows with ancestor breadcrumbs such as `herdr-picker / multimachine`, followed by their matching tabs. Nonempty searches rank each row by its best workspace/tab match, with stable ties in workspace order; empty searches use hierarchical workspace order. Matching tabs always retain their owning workspace. The displayed result count counts workspace/worktree rows, including selectable ancestors in hierarchical mode.
 
-In both modes, a workspace or worktree with exactly one tab appears as a single `Workspace - Tab` row. Both names remain searchable and matching text is highlighted. Selecting this row focuses the workspace and restores its remembered tab and pane. The row counts as one result. Multi-tab workspaces keep their normal layout even when filtering matches only one tab.
+Workspaces and worktrees show their matching tabs in the right-hand strip even when they have only one tab. The workspace and its tabs count as one result. Enter on the workspace restores its remembered tab and pane; selecting a tab focuses that tab explicitly. Cycling a sole matching tab keeps it selected.
 
-Matching ignores case, supports noncontiguous characters, and requires **every whitespace-separated term** to match a workspace, worktree, or tab name. Each term can match within one name or span hierarchy labels in parent-to-child order without spaces. `pickercodex` and `color codex` both find `ColorPicker / Codex`. Separate terms can match different levels in any order. Matches within a single name retain their existing scoring and highlighting preference. `color` can also match `ColorPicker / Claude Code` because `cod` genuinely matches “Code.” No branches, paths, panes, agent metadata, or unopened worktrees participate. Full names stay searchable after visual truncation.
+Matching ignores case, supports noncontiguous characters, and requires **every whitespace-separated term** to match a workspace, worktree, or tab name. Each term can match within one name or span hierarchy labels in parent-to-child order without spaces. `pickercodex` and `color codex` both find the Codex tab beside ColorPicker. Separate terms can match different levels in any order. Matches within a single name retain their existing scoring and highlighting preference. `color` can also match the Claude Code tab beside ColorPicker because `cod` genuinely matches “Code.” No branches, paths, panes, agent metadata, or unopened worktrees participate. Full names stay searchable after visual truncation.
 
 Worktrees are grouped by the snapshot's repository key, not their names or checkout paths. A renamed root still owns its worktrees. If the root workspace is closed, provenance is incomplete, or multiple open roots share the key, worktrees remain standalone destinations. Nothing is opened to create a parent row.
 
 For example, with one tab in each worktree:
 
 ```text
-herdr-picker
-  1
-  2
-  multimachine - 1
-  skip-showing-tab-if-1-tab - 1
-  just - 1
-  worktree-hirarchy - 1
+herdr-picker                      [1] [2]
+  multimachine                    [1]
+  skip-showing-tab-if-1-tab        [1]
+  just                            [1]
+  worktree-hirarchy                [1]
 ```
 
-If `multimachine` has multiple tabs, it expands to `multimachine` with its tabs indented another level. `herdr-picker multimachine codex` finds its Codex tab and retains both ancestors in hierarchical mode. The active group appears first, other groups follow root workspace number order, and siblings keep workspace number order. The active marker stays on the actual focused destination, even when its root appears first.
+If `multimachine` has multiple tabs, those tabs appear to its right on the same row. `herdr-picker multimachine codex` finds its Codex tab and retains both ancestors in hierarchical mode. The active group appears first, other groups follow root workspace number order, and siblings keep workspace number order. The active marker stays on the actual focused destination, even when its root appears first.
 
-Changing the query immediately selects the first result in the current mode's ordering. Searching never switches automatically. Clearing the query selects the first result too; only a newly opened picker uses the initial other-workspace selection.
+Changing the query immediately selects the first workspace/worktree result in the current mode's ordering. Searching never switches automatically. Clearing the query selects the first workspace/worktree result too; only a newly opened picker uses the initial other-workspace selection.
 
 ## Controls
 
 | Input | Action |
 | --- | --- |
 | Typing / paste | Filter immediately |
-| ↑ / Ctrl+P | Previous row |
-| ↓ / Ctrl+N | Next row |
+| ↑ / Ctrl+P | Previous workspace or worktree |
+| ↓ / Ctrl+N | Next workspace or worktree |
+| → / Tab | First or next matching tab, wrapping after the last |
+| ← / Shift+Tab | Previous matching tab, wrapping before the first; from a workspace, select its last matching tab |
 | Enter / click ↵ OK | Focus selected workspace or tab and exit |
 | Esc / Ctrl+C / click Esc Cancel | Exit without switching |
 | Left click | Focus clicked result and exit |
 | Mouse wheel | Move selection and scroll results |
 
-Navigation stops at the first/last row. Arrow left/right have no tree behavior. Empty results show “No matching results”; Enter does nothing. Every invocation starts with an empty query. `●` marks the currently active workspace/tab; `›` and the theme selection background mark selection. Matches are bold and underlined, including on selected rows. Labels stay on one line and truncate with `…`.
+Vertical navigation stops at workspace boundaries. Moving up/down selects the destination workspace and clears tab selection; a boundary press leaves selection unchanged. Left/right and Tab/Shift+Tab cycle only through matching tabs in their workspace, without selecting the workspace itself. When tabs exceed the available width, the strip shifts to keep the selected tab readable, with `◀`/`▶` marking hidden tabs. Click a workspace label or tab to activate it; gaps and overflow indicators do nothing. The mouse wheel moves between workspace rows and clears tab selection.
+
+Empty results show “No matching results”; Enter does nothing. Every invocation starts with an empty query. `●` marks the currently active workspace/tab; `›` marks workspace selection and the theme background keeps the workspace highlighted together with its selected tab. Matches are bold and underlined, including on selected destinations. Labels stay on one line and truncate with `…`.
+
 
 The centered popup is 80% wide and at most 22 outer rows, clamped by Herdr to the terminal size. All results remain reachable by scrolling. The terminal UI responds to resize; extremely small areas retain Escape guidance. It requests terminal mouse reporting; Herdr 0.9.5 source forwards popup mouse events. Enable Herdr's mouse capture if the outer terminal otherwise handles clicks.
 
@@ -157,7 +160,7 @@ The picker reads Herdr's saved theme configuration on each opening. It follows
 `~/.config/herdr/config.toml`. No picker theme configuration is needed.
 
 Root workspace names use the theme accent, worktree names use green, and tab
-names use blue, including breadcrumbs and inline tabs. With Dracula these
+names use blue, including breadcrumbs and horizontal tabs. With Dracula these
 are purple (`#BD93F9`), green (`#50FA7B`), and cyan (`#8BE9FD`). Custom token
 overrides apply to these colors too. Selected results retain their type
 colors over the theme selection background.
@@ -212,13 +215,14 @@ cargo build --locked --release --target-dir target
 python3 tests/pty_smoke.py
 ```
 
-The Rust tests do not need a running Herdr server. The PTY smoke suite uses host Python 3 to launch the real release binary against a fake CLI and check focus requests, resize, terminal cleanup, cancellation, and failure recovery. CI runs both suites on macOS and Linux. The visual snapshot suite below supplies Python inside its container. See [manual end-to-end checks](docs/manual-testing.md) before publishing a release.
+The Rust tests do not need a running Herdr server. The PTY smoke suite uses host Python 3 to launch the real release binary against a fake CLI and check focus requests, resize, terminal cleanup, cancellation, and failure recovery. CI runs both suites on macOS and Linux. The Docker-based focus and visual suites below supply Python inside their container and exercise a real Herdr server.
 
-### Visual snapshots
+### Real Herdr integration and visual snapshots
 
-With Docker running, compare the committed PNG baselines:
+With Docker running, verify focus behavior and compare the committed PNG baselines:
 
 ```sh
+just test-focus
 just test-snapshots
 ```
 
@@ -228,6 +232,13 @@ the plugin through its manifest action. It captures the full terminal window
 with fixed fonts and dimensions. Loading, empty-data, and tiny-terminal cases
 use the same production renderer with Ratatui's test backend. No changes are
 made to your Herdr configuration, plugins, or running sessions.
+
+The focus suite uses that same isolated environment to create split panes and
+assert workspace/tab/pane IDs, remembered active tabs, and unchanged layout
+structure after keyboard and mouse activation, Escape, and stale-destination
+failure recovery. It also checks that the popup closes and shell input reaches
+the destination again. These are live API assertions, independent of PNG
+baselines. CI runs them on Linux alongside the visual suite.
 
 For an intentional UI change, record and review the updated images:
 
@@ -239,9 +250,10 @@ just test-snapshots --repeat 2
 
 Commit the changed PNGs with the UI change to preview them in GitHub's image
 diff viewer. The README uses the tested showcase baseline directly. CI runs
-snapshot comparisons alongside the macOS/Linux `just ready` checks and uploads
-the `visual-snapshots` artifact for seven days, including actual previews,
-expected images and pixel differences on failure, and terminal/server logs.
+focus assertions and snapshot comparisons alongside the macOS/Linux
+`just ready` checks and uploads the `visual-snapshots` artifact for seven days,
+including actual previews, expected images and pixel differences on failure,
+terminal/server logs, and before/after focus snapshots.
 Comparison never updates baselines, and recording is disabled in CI.
 See [snapshot testing](docs/snapshots.md) for cases and troubleshooting.
 
@@ -264,8 +276,8 @@ src/ui.rs             Rendering and terminal lifecycle
 src/config.rs         Strict picker TOML configuration
 src/theme.rs          Herdr palette, config resolution, light/dark rules
 src/main.rs           Entrypoints and error reporting/recovery
-tests/                Search, navigation, API, render, and PTY tests
-docs/                 Feasibility evidence and manual test procedure
+tests/                Rust, PTY, real Herdr focus, and visual tests
+docs/                 API feasibility and automated snapshot testing
 examples/             Herdr and picker configuration
 ```
 
@@ -287,10 +299,10 @@ True session MRU, previous-workspace preselection, top alignment, and a plugin t
 
 Only the local selected Herdr session is covered; this release does not aggregate machines or sessions. Unknown response fields are ignored, while missing/duplicate IDs and broken parent relationships are rejected. Focus uses stable public IDs and preserves remembered tab/pane context through Herdr's focus methods. A focus failure triggers best-effort restoration; if the original destination also closed or the server is unavailable, restoration cannot be guaranteed.
 
-macOS builds, automated tests, PTY behavior, and live snapshot parsing were verified during development. Linux is configured in CI but was not executed locally. Actual popup installation/launch, live workspace/tab switching, active-pane preservation, and mouse delivery still require the documented manual test. No repository has been published, and no user shortcuts or terminal configuration have been changed.
+CI runs Rust tests and PTY smoke scenarios on macOS and Linux. The pinned Linux Herdr 0.9.5 container additionally verifies plugin registration and popup launch, workspace/tab focus, non-root pane preservation, unchanged layout structure, keyboard and mouse delivery, cancellation, failure recovery, and visual snapshots. Native terminal shortcut interception and OS-specific appearance-report forwarding vary by terminal and are outside that container's coverage; see the shortcut and troubleshooting sections.
 
 Project code is MIT licensed; adapted Herdr palette code is Apache-2.0 licensed
-with attribution in `src/theme.rs` and `LICENSES/Herdr-Apache-2.0.txt`. Once published, maintainers can add the GitHub topic `herdr-plugin` for Herdr's community plugin index.
+with attribution in `src/theme.rs` and `LICENSES/Herdr-Apache-2.0.txt`. Maintainers can add the GitHub topic `herdr-plugin` for Herdr's community plugin index.
 
 Snapshot fonts are DejaVu Sans Mono 2.37, redistributed under their
 [Bitstream Vera license](tests/snapshots/fonts/LICENSE).

@@ -30,7 +30,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::{
     api::Herdr,
-    app::{Action, App},
+    app::{Action, App, ResultHit},
     config::SearchMode,
     model::{Snapshot, Target},
     search::{Row, RowKind},
@@ -245,38 +245,86 @@ fn row_line(
             remaining = remaining.saturating_sub(used + 3);
         }
     } else {
-        let indent = (row.depth * 2).min(remaining);
+        let indent = (row.depth * 2).min(remaining.saturating_sub(1));
         spans.push(Span::raw(" ".repeat(indent)));
         remaining = remaining.saturating_sub(indent);
     }
-    if let Some(tab) = &row.inline_tab
-        && remaining >= 5
-    {
-        let workspace_width = (remaining / 2).min(row.label.width());
+    spans.extend(colored_label_spans(
+        &row.label,
+        &row.label_matches,
+        remaining,
+        row.kind,
+        palette,
+    ));
+    let style = if selected {
+        palette
+            .base_style()
+            .bg(palette.selection_bg)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        palette.base_style()
+    };
+    Line::from(spans).style(style)
+}
+
+fn tab_width(row: &Row) -> usize {
+    row.label.width() + 2 + usize::from(row.active)
+}
+
+fn tab_window(tabs: &[Row], selected: Option<usize>, width: usize) -> (usize, Vec<(usize, usize)>) {
+    let layout = |start: usize| {
+        let mut remaining = width.saturating_sub(usize::from(start > 0));
+        let mut visible = Vec::new();
+        for (index, tab) in tabs.iter().enumerate().skip(start) {
+            let reserve = usize::from(index + 1 < tabs.len());
+            if remaining <= reserve {
+                break;
+            }
+            let used = tab_width(tab).min(remaining - reserve);
+            visible.push((index, used));
+            remaining = remaining.saturating_sub(used + 1);
+        }
+        visible
+    };
+    let mut start = 0;
+    let mut visible = layout(start);
+    if let Some(selected) = selected {
+        while start < selected
+            && !visible.iter().any(|(index, used)| {
+                let available = width.saturating_sub(
+                    usize::from(start > 0) + usize::from(selected + 1 < tabs.len()),
+                );
+                *index == selected && *used >= tab_width(&tabs[selected]).min(available)
+            })
+        {
+            start += 1;
+            visible = layout(start);
+        }
+    }
+    (start, visible)
+}
+
+fn tab_line(row: &Row, width: usize, selected: bool, palette: Palette) -> Line<'static> {
+    let mut spans = Vec::new();
+    if width < 3 {
         spans.extend(colored_label_spans(
             &row.label,
             &row.label_matches,
-            workspace_width,
-            row.kind,
-            palette,
-        ));
-        spans.push(Span::raw(" - "));
-        remaining = remaining.saturating_sub(workspace_width + 3);
-        spans.extend(colored_label_spans(
-            tab,
-            &row.inline_tab_matches,
-            remaining,
+            width,
             RowKind::Tab,
             palette,
         ));
     } else {
+        let active = row.active && width >= 4;
+        spans.push(Span::raw(if active { "[●" } else { "[" }));
         spans.extend(colored_label_spans(
             &row.label,
             &row.label_matches,
-            remaining,
-            row.kind,
+            width - 2 - usize::from(active),
+            RowKind::Tab,
             palette,
         ));
+        spans.push(Span::raw("]"));
     }
     let style = if selected {
         palette
@@ -289,12 +337,91 @@ fn row_line(
     Line::from(spans).style(style)
 }
 
+fn render_result(frame: &mut Frame<'_>, app: &App, index: usize, area: Rect) -> Vec<ResultHit> {
+    let result = &app.results[index];
+    let mut hits = Vec::new();
+    let palette = app.theme.palette();
+    let selected = app.selected == Some(index);
+    let workspace_width = if result.tabs.is_empty() {
+        area.width
+    } else {
+        let content = area.width.saturating_sub(2);
+        if area.width < 24 {
+            content / 2
+        } else {
+            content * 2 / 5
+        }
+    };
+    let workspace_area = Rect::new(area.x, area.y, workspace_width, 1);
+    let line = row_line(
+        &result.workspace,
+        app.mode == SearchMode::Flat,
+        usize::from(workspace_width),
+        selected,
+        palette,
+    );
+    let hit_width = line.width().min(usize::from(workspace_width)) as u16;
+    frame.render_widget(Paragraph::new(line), workspace_area);
+    if hit_width > 0 {
+        hits.push(ResultHit {
+            area: Rect::new(area.x, area.y, hit_width, 1),
+            workspace: index,
+            tab: None,
+        });
+    }
+    if result.tabs.is_empty() {
+        return hits;
+    }
+    let tab_x = area.x + workspace_width + 2;
+    let tab_area = Rect::new(tab_x, area.y, area.right().saturating_sub(tab_x), 1);
+    let selected_tab = selected.then_some(app.selected_tab).flatten();
+    let (start, visible) = tab_window(&result.tabs, selected_tab, usize::from(tab_area.width));
+    let mut x = tab_area.x;
+    if start > 0 && tab_area.width > 0 {
+        frame.render_widget(
+            Paragraph::new("◀").style(palette.base_style().fg(palette.overlay1)),
+            Rect::new(x, area.y, 1, 1),
+        );
+        x += 1;
+    }
+    for &(tab, width) in &visible {
+        let hit = Rect::new(x, area.y, width as u16, 1);
+        frame.render_widget(
+            Paragraph::new(tab_line(
+                &result.tabs[tab],
+                width,
+                selected_tab == Some(tab),
+                palette,
+            )),
+            hit,
+        );
+        hits.push(ResultHit {
+            area: hit,
+            workspace: index,
+            tab: Some(tab),
+        });
+        x += width as u16 + 1;
+    }
+    if visible
+        .last()
+        .is_some_and(|(index, _)| index + 1 < result.tabs.len())
+        && tab_area.width > 0
+    {
+        frame.render_widget(
+            Paragraph::new("▶").style(palette.base_style().fg(palette.overlay1)),
+            Rect::new(tab_area.right() - 1, area.y, 1, 1),
+        );
+    }
+    hits
+}
+
 pub fn render(frame: &mut Frame<'_>, app: &mut App) {
     let area = frame.area();
     let palette = app.theme.palette();
     frame.render_widget(Paragraph::new("").style(palette.base_style()), area);
     app.ok_area = Rect::default();
     app.cancel_area = Rect::default();
+    app.result_hits.clear();
     if area.width < 8 || area.height < 6 {
         app.results_area = Rect::default();
         frame.render_widget(
@@ -312,7 +439,7 @@ pub fn render(frame: &mut Frame<'_>, app: &mut App) {
         Constraint::Length(1),
     ])
     .split(area);
-    let count = format!(" {} results ", app.rows.len());
+    let count = format!(" {} results ", app.results.len());
     let input_width = usize::from(chunks[0].width).saturating_sub(count.len());
     let prompt = if app.query.is_empty() {
         "Search workspaces, worktrees and tabs"
@@ -342,35 +469,34 @@ pub fn render(frame: &mut Frame<'_>, app: &mut App) {
     );
     app.results_area = chunks[2];
     app.ensure_visible(usize::from(chunks[2].height));
-    if app.rows.is_empty() {
+    if app.results.is_empty() {
         frame.render_widget(
             Paragraph::new("No matching results").style(palette.base_style().fg(palette.subtext0)),
             chunks[2],
         );
     } else {
-        let lines: Vec<_> = app
-            .rows
-            .iter()
-            .enumerate()
-            .skip(app.offset)
+        for (y, index) in (app.offset..app.results.len())
             .take(usize::from(chunks[2].height))
-            .map(|(i, row)| {
-                row_line(
-                    row,
-                    app.mode == SearchMode::Flat,
-                    usize::from(area.width),
-                    app.selected == Some(i),
-                    palette,
-                )
-            })
-            .collect();
-        frame.render_widget(Paragraph::new(lines).style(palette.base_style()), chunks[2]);
+            .enumerate()
+        {
+            let row_area = Rect::new(chunks[2].x, chunks[2].y + y as u16, chunks[2].width, 1);
+            let hits = render_result(frame, app, index, row_area);
+            app.result_hits.extend(hits);
+        }
     }
     let position = app.selected.map(|i| i + 1).unwrap_or(0);
     let help = if area.width >= 65 {
-        format!(" ↑↓/Ctrl+P,N Navigate  {position}/{}", app.rows.len())
+        format!(
+            " ↑↓/Ctrl+P,N Workspaces  ←→/Tab/Shift+Tab Tabs  {position}/{}",
+            app.results.len()
+        )
+    } else if area.width >= 40 {
+        format!(
+            " ↑↓ Workspaces  ←→/Tab Tabs  {position}/{}",
+            app.results.len()
+        )
     } else {
-        format!(" ↑↓ Move  {position}/{}", app.rows.len())
+        " ↑↓ Workspaces ←→/Tab".to_owned()
     };
     frame.render_widget(
         Paragraph::new(help).style(palette.base_style().fg(palette.overlay1)),

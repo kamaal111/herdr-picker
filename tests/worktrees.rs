@@ -78,7 +78,8 @@ fn renamed_root_still_owns_worktrees_with_same_repository_key() {
     let snapshot = snapshot(fixture);
     assert_eq!(groups(&snapshot)[0], ("w1", vec!["w2", "w3", "w4", "w5"]));
     let rows = Search::default().rows(&snapshot, "renamed just terminal", SearchMode::Hierarchical);
-    assert_eq!(rows.len(), 2);
+    assert_eq!(rows.len(), 3);
+    assert_eq!(rows[2].label, "Terminal");
     assert_eq!(rows[0].label, "Renamed project");
     assert_eq!(rows[1].label, "just");
 }
@@ -119,10 +120,11 @@ fn worktrees_with_closed_root_stay_standalone_and_selectable() {
         ]
     );
     let rows = Search::default().rows(&snapshot, "just", SearchMode::Hierarchical);
-    assert_eq!(rows.len(), 1);
+    assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].depth, 0);
     assert!(rows[0].ancestors.is_empty());
-    assert_eq!(rows[0].inline_tab.as_deref(), Some("Terminal"));
+    assert_eq!(rows[1].label, "Terminal");
+    assert_eq!(rows[1].workspace_id, rows[0].workspace_id);
 }
 
 #[test]
