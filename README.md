@@ -19,24 +19,42 @@ Herdr's built-in sidebar and navigation keys move through its existing UI. This 
 - Stable Rust and Cargo (Rust 1.88 minimum for this source release).
 - Git for installation from GitHub. No daemon, Node, or Python runtime is needed by the plugin.
 
-Build and link this directory:
+### Install from GitHub (recommended)
 
-```sh
-cargo build --release --locked
-herdr plugin link "$PWD"
-herdr plugin action invoke herdr-picker.open
-```
-
-`plugin link` does not run build commands. Rebuild after source changes. Linking registers the plugin globally for the current user; it does not edit keyboard shortcuts.
-
-Install this repository directly from GitHub:
+Run on each machine:
 
 ```sh
 herdr plugin install kamaal111/herdr-picker
 herdr plugin action invoke herdr-picker.open
 ```
 
-Herdr runs the manifest's locked Cargo release build during GitHub installation. Review the installation preview as with any executable plugin. Installation builds from source; no prebuilt binary is required.
+Herdr manages its own checkout and runs the manifest's locked Cargo release build. You do not need to clone this repository or keep a development checkout on each machine. Git and Rust/Cargo are required on each machine because installation builds from source. Review the installation preview as with any executable plugin.
+
+After confirming the action works, add a [launch shortcut](#launch-shortcut). Search mode defaults to hierarchical without creating a plugin config file.
+
+### Update an installed plugin
+
+After new changes reach this repository's `main` branch, run on each machine:
+
+```sh
+herdr plugin update herdr-picker
+```
+
+Herdr updates its managed checkout and rebuilds the plugin. No manual `git pull` or build command is needed. Updates are requested per machine; they do not synchronize automatically. These installation commands follow `main`, so maintainers publish updates by pushing tested changes there; a GitHub Release or package registry is not required.
+
+### Switch from a local link
+
+If you previously used `herdr plugin link`, unlink it before installing from GitHub:
+
+```sh
+herdr plugin unlink herdr-picker
+herdr plugin install kamaal111/herdr-picker
+herdr plugin action invoke herdr-picker.open
+```
+
+Unlinking leaves your source directory intact. Keep your existing `herdr-picker.open` keyboard shortcut; the action ID stays the same. After switching, Herdr launches the plugin from its managed checkout, so the old source directory is no longer required for running it.
+
+### Open the pane directly
 
 To open the pane entrypoint directly:
 
@@ -44,13 +62,7 @@ To open the pane entrypoint directly:
 herdr plugin pane open --plugin herdr-picker --entrypoint picker
 ```
 
-To unlink local development files without deleting them:
-
-```sh
-herdr plugin unlink herdr-picker
-```
-
-### Installing from a source directory
+### Link a source directory for development
 
 Install Herdr 0.9.5 or newer and stable Rust/Cargo, then obtain the project source by cloning the repository or extracting a source archive. The source must include `Cargo.lock`, `Cargo.toml`, `rust-toolchain.toml`, `herdr-plugin.toml`, and `src/`. Build locally so the executable matches your OS and CPU; an existing `target/` directory is not needed.
 
@@ -64,7 +76,7 @@ herdr plugin link "$PWD"
 herdr plugin action invoke herdr-picker.open
 ```
 
-The `check` command validates discovery without changing focus. The final command opens the picker; press Escape to dismiss it or select a destination with Enter. Keep the project directory at that location while linked, because Herdr launches the executable from it.
+`plugin link` registers the plugin globally for the current user but does not run build commands or edit keyboard shortcuts. Rebuild after source changes. The `check` command validates discovery without changing focus. The final command opens the picker; press Escape to dismiss it or select a destination with Enter. Keep the project directory at that location while linked, because Herdr launches the executable from it. To unregister the local plugin without deleting its files, run `herdr plugin unlink herdr-picker`.
 
 After confirming the action works, add a launch shortcut using the next section. Search mode defaults to hierarchical without creating a plugin config file. The [automated verification commands](#development) exercise discovery, popup launch, and destination focus in isolated sessions.
 
