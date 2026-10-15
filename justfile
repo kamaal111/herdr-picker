@@ -43,6 +43,10 @@ ready: quality test test-pty
 test-snapshots *args:
     sh tests/snapshots/run.sh {{args}}
 
+# Verify real Herdr focus, remembered panes, popup teardown, and cancellation
+test-focus:
+    sh tests/snapshots/run.sh --focus-tests
+
 # Intentionally update all PNG baselines, or specify case names (never in CI)
 record-snapshots *cases:
     sh tests/snapshots/run.sh --record {{cases}}

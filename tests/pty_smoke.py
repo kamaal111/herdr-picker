@@ -136,11 +136,19 @@ case(b"\x1b")
 case(b"\x1b", loading=True)
 case(b"col\x1b")
 case(b"\r", expected=[["workspace", "focus", "w1"]])
-case(b"codex\x0e\r", expected=[["tab", "focus", "w2:t7"]])
-case(b"server\r", mode="flat", expected=[["tab", "focus", "w2:t2"]])
+case(b"codex\x1b[C\r", expected=[["tab", "focus", "w2:t7"]])
+case(b"server\x1b[C\r", mode="flat", expected=[["tab", "focus", "w2:t2"]])
+case(b"colorpicker\x1b[C\x1b[C\x1b[D\r", expected=[["tab", "focus", "w1:t4"]])
+case(b"colorpicker\x1b[C\x1b[D\r", mode="flat", expected=[["tab", "focus", "w1:t9"]])
+case(b"\x1b[C\x1b[B\x1b[A\r", expected=[["workspace", "focus", "w1"]])
+case(b"colorpicker\t\t\t\t\r", expected=[["tab", "focus", "w1:t4"]])
+case(b"colorpicker\x1b[Z\r", mode="flat", expected=[["tab", "focus", "w1:t9"]])
+case(b"colorpicker\t\x1b[Z\r", expected=[["tab", "focus", "w1:t9"]])
 case(b"exact terminal\r", expected=[["workspace", "focus", "w3"]])
 case(b"exact terminal\r", mode="flat", expected=[["workspace", "focus", "w3"]])
-case(b"pickercodex\r", mode="flat", expected=[["tab", "focus", "w1:t8"]])
+case(b"pickercodex\x1b[C\r", mode="flat", expected=[["tab", "focus", "w1:t8"]])
+case(b"exact terminal\t\t\r", expected=[["tab", "focus", "w3:t1"]])
+case(b"exact terminal\x1b[Z\r", mode="flat", expected=[["tab", "focus", "w3:t1"]])
 case(b"codexterminal\r", expected=[["workspace", "focus", "w3"]])
 case(
     b"\r",
@@ -160,7 +168,7 @@ case(
 )
 WORKTREE_FIXTURE = ROOT / "tests/fixtures/worktrees.json"
 case(
-    b"herdr-pickermultimachinecodex\x0e\x0e\r",
+    b"herdr-pickermultimachinecodex\x0e\x1b[C\r",
     fixture=WORKTREE_FIXTURE,
     expected=[["tab", "focus", "w2:t1"]],
 )
@@ -170,7 +178,7 @@ case(
     expected=[["workspace", "focus", "w4"]],
 )
 case(
-    b"herdr-picker multimachine codex\r",
+    b"herdr-picker multimachine codex\x1b[C\r",
     mode="flat",
     fixture=WORKTREE_FIXTURE,
     expected=[["tab", "focus", "w2:t1"]],
@@ -190,5 +198,5 @@ case(
     expected=[["workspace", "focus", "w3"]],
 )
 print(
-    "20 PTY smoke scenarios passed (Escape including slow discovery, filtering, workspace/tab focus, nested worktrees, flat mode, failure recovery; resize and terminal cleanup)"
+    "28 PTY smoke scenarios passed (Escape including slow discovery, filtering, workspace/tab focus, nested worktrees, flat mode, failure recovery; resize and terminal cleanup)"
 )

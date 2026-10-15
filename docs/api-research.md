@@ -1,6 +1,6 @@
 # Herdr API feasibility
 
-Investigated 2026-10-14 against installed Herdr 0.9.5 (protocol 22), the bundled `herdr api schema --json`, the live read-only `herdr api snapshot` response, and upstream source at commit `916fcf8de029c6cac965b50f3cdb9687cd7d1537`. This document distinguishes supported host behavior from plugin implementation choices and unverified end-to-end behavior.
+Investigated 2026-10-14 against installed Herdr 0.9.5 (protocol 22), the bundled `herdr api schema --json`, the live read-only `herdr api snapshot` response, and upstream source at commit `916fcf8de029c6cac965b50f3cdb9687cd7d1537`. This document records API constraints and plugin implementation choices; the validation boundary below describes current automated coverage.
 
 ## Required documentation and examples
 
@@ -39,7 +39,7 @@ Manifest `[[events]]` focus hooks are also supported and run one-shot processes,
 
 Plugin command logs have server-recorded start times and IDs, but their records omit invocation workspace context and are bounded. Using their ID spelling or bounded history as an authoritative MRU store would introduce another undocumented dependency. Updating a file only when this picker opens would miss navigation through the sidebar, built-in keys, and other clients. None of these alternatives justifies claiming accurate session MRU.
 
-Therefore this release **does not implement true MRU**. It displays the group containing the focused workspace first and the remaining groups in numbered root workspace UI order. Root tabs come before worktrees; worktrees and their tabs retain numbered UI order, including during hierarchical searches. It preselects the first other workspace, or the only workspace if there is one. This is deterministic and supports quick switching, but cannot guarantee switching back to the previous workspace. Nothing is persisted across invocations or sessions. A future public snapshot field containing server-owned focus history would allow the requirement without a daemon or inferred ordering.
+Therefore this release **does not implement true MRU**. It displays the group containing the focused workspace first and the remaining groups in numbered root workspace UI order. Worktrees retain numbered workspace UI order during hierarchical searches; matching tabs appear horizontally beside their owner in numbered tab order. It preselects the first other workspace, or the only workspace if there is one. This is deterministic and supports quick switching, but cannot guarantee switching back to the previous workspace. Nothing is persisted across invocations or sessions. A future public snapshot field containing server-owned focus history would allow the requirement without a daemon or inferred ordering.
 
 ## Focus, cleanup, and failures
 
@@ -67,7 +67,7 @@ All links below are pinned to the inspected revision:
 
 ## Validation boundary
 
-A running local Herdr 0.9.5 server successfully answered a read-only snapshot request. Its actual response envelope matches the fixture and parser. Automated tests use a sanitized synthetic fixture and fake CLI; no real project paths, native agent session IDs, or user snapshot files are committed. Public source confirms focus/cleanup behavior, but live popup launching, focus operations, pane preservation, mouse forwarding, and terminal-specific shortcuts were not exercised against the user's session to avoid disrupting work. See [manual testing](manual-testing.md).
+Rust and PTY tests exercise parsing, navigation, focus requests, terminal cleanup, and error handling using synthetic fixtures and a fake CLI on macOS and Linux. The pinned Linux container runs a real Herdr 0.9.5 server with temporary repositories, linked worktrees, plugin registration, and split panes. `just test-focus` asserts workspace/tab/pane focus, remembered active tabs, unchanged layout structure, popup teardown, resumed shell input, mouse activation, cancellation, and recovery from a closed destination. `just test-snapshots` verifies rendered output and real host keyboard delivery. No user's configuration or session is used. Native terminal shortcut interception and OS-specific appearance-report forwarding remain environment-dependent. See [automated Herdr testing](snapshots.md).
 
 ## Picker theme compatibility
 
