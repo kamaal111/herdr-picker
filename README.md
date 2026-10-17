@@ -1,3 +1,6 @@
+> **Deprecated:** This plugin has been deprecated in favor of
+> [herdrpp](https://github.com/kamaal111/herdrpp), which includes this picker feature.
+
 # herdr-picker
 
 Fuzzy-find open Herdr workspaces, worktrees, and tabs. Type to search, move
